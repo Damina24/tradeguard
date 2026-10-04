@@ -1,0 +1,47 @@
+workflows:
+  android-release:
+    name: Android Release
+    max_build_duration: 60
+    environment:
+      flutter: 3.22.2
+      java: 17
+    scripts:
+      - name: Get packages
+        script: flutter pub get
+      - name: Analyze
+        script: flutter analyze
+      - name: Test
+        script: flutter test
+      - name: Build AAB
+        script: flutter build appbundle --release --dart-define-from-file=env/prod.json
+    artifacts:
+      - build/app/outputs/bundle/release/*.aab
+      - build/app/outputs/logs/*
+
+  ios-release:
+    name: iOS Release (TestFlight)
+    max_build_duration: 90
+    environment:
+      flutter: 3.22.2
+      xcode: latest
+      cocoapods: default
+      ios_signing:
+        distribution_type: app_store
+        bundle_identifier: com.tradeguard.app
+    integrations:
+      app_store_connect: TradeGuard ASC Key
+    scripts:
+      - name: Get packages
+        script: flutter pub get
+      - name: Install pods
+        script: |
+          cd ios && pod install
+      - name: Build IPA
+        script: flutter build ipa --release --dart-define-from-file=env/prod.json
+    artifacts:
+      - build/ios/ipa/*.ipa
+      - /tmp/xcodebuild_logs/*.log
+    publishing:
+      app_store_connect:
+        auth: integration
+        submit_to_testflight: true

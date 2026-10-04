@@ -1,0 +1,267 @@
+import 'dart:async';
+
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+import '../models/account.dart';
+import '../models/guard_status.dart';
+import '../models/signal.dart';
+import '../models/trade.dart';
+import 'account_repository.dart';
+import 'broker_connect_service.dart';
+import 'guard_alert_monitor.dart';
+import 'mock_data.dart';
+import 'services.dart';
+import 'trade_repository.dart';
+
+/// True when the app is running without a configured backend.
+bool get kUseMock => Services.instance.isMock;
+
+/// ---- Accounts ----
+
+class AccountsNotifier extends StateNotifier<List<TradingAccount>> {
+  AccountsNotifier(this._repo) : super(const <TradingAccount>[]) {
+    unawaited(refresh());
+  }
+
+  final AccountRepository _repo;
+
+  /// Non-null when the last load failed. The UI surfaces OFFLINE rather than showing
+  /// stale-but-plausible numbers as if they were live.
+  Object? _error;
+  Object? get error => _error;
+
+  TradingAccount? byId(String id) {
+    for (final TradingAccount a in state) {
+      if (a.id == id) return a;
+    }
+    return null;
+  }
+
+  Future<void> refresh() async {
+    try {
+      final List<TradingAccount> rows = await _repo.fetchAccounts();
+      _error = null;
+      state = rows;
+    } catch (e) {
+      _error = e;
+    }
+  }
+
+  Future<void> addAccount(TradingAccount a) async {
+    await _repo.createAccount(a);
+    await refresh();
+  }
+
+  Future<void> removeAccount(String accountId) async {
+    await _repo.deleteAccount(accountId);
+    await refresh();
+  }
+
+  Future<void> setEquityGuardEnabled(String accountId, bool enabled) async {
+    await _repo.setEquityGuardEnabled(accountId, enabled);
+    await refresh();
+  }
+}
+
+final StateNotifierProvider<AccountsNotifier, List<TradingAccount>> accountsProvider =
+    StateNotifierProvider<AccountsNotifier, List<TradingAccount>>(
+  (Ref ref) => AccountsNotifier(Services.instance.accounts),
+);
+
+/// Explicit user selection. `null` means "not chosen yet" — see [selectedAccountProvider].
+final StateProvider<String?> selectedAccountIdProvider =
+    StateProvider<String?>((Ref ref) => null);
+
+/// The account the guard reports on. Falls back to the first account so the screen is never
+/// "loaded but nothing selected", and never keeps a selection that a delete invalidated.
+final Provider<TradingAccount?> selectedAccountProvider =
+    Provider<TradingAccount?>((Ref ref) {
+  final List<TradingAccount> accounts = ref.watch(accountsProvider);
+  if (accounts.isEmpty) return null;
+  final String? id = ref.watch(selectedAccountIdProvider);
+  for (final TradingAccount a in accounts) {
+    if (a.id == id) return a;
+  }
+  return accounts.first;
+});
+
+/// ---- Broker connect ----
+
+/// Where the connect flow currently is. Keeping this as an explicit state (rather than a local
+/// `bool isBusy`) is what lets the sheet survive a rebuild mid-request without double-submitting.
+enum ConnectStatus { idle, connecting, success, failure }
+
+class ConnectState {
+  const ConnectState({
+    this.status = ConnectStatus.idle,
+    this.message,
+  });
+
+  const ConnectState.idle() : this();
+
+  final ConnectStatus status;
+  final String? message;
+
+  bool get isBusy => status == ConnectStatus.connecting;
+}
+
+/// Drives `meta-connect` then persists the account through [AccountsNotifier].
+///
+/// The broker password lives only in the [BrokerConnectionRequest] the sheet builds; it is passed
+/// straight through to the Edge Function and is not part of [ConnectState], so it cannot leak into
+/// the widget tree, a log, or persisted state.
+class ConnectAccountNotifier extends StateNotifier<ConnectState> {
+  ConnectAccountNotifier(this._connect, this._accounts)
+      : super(const ConnectState.idle());
+
+  final BrokerConnectService _connect;
+  final AccountsNotifier _accounts;
+
+  bool get isStubbed => _connect.isStubbed;
+
+  /// Returns the new account id, or null on failure (with [ConnectState.message] set).
+  Future<String?> connect(BrokerConnectionRequest request) async {
+    final Map<String, String> errors = validateConnection(request);
+    if (errors.isNotEmpty) {
+      state = ConnectState(
+        status: ConnectStatus.failure,
+        message: errors.values.first,
+      );
+      return null;
+    }
+
+    state = const ConnectState(status: ConnectStatus.connecting);
+
+    try {
+      final String metaapiAccountId = await _connect.connectBroker(request);
+      await _accounts.addAccount(connectedAccount(request, metaapiAccountId));
+      state = ConnectState(
+        status: ConnectStatus.success,
+        message: '${request.nickname.trim()} connected.',
+      );
+      return metaapiAccountId;
+    } on BrokerConnectException catch (e) {
+      state = ConnectState(status: ConnectStatus.failure, message: e.message);
+      return null;
+    } catch (_) {
+      // Never surface a raw platform error string — it can contain the broker response body.
+      state = const ConnectState(
+        status: ConnectStatus.failure,
+        message: 'Could not connect that account. Try again shortly.',
+      );
+      return null;
+    }
+  }
+
+  void reset() => state = const ConnectState.idle();
+}
+
+final StateNotifierProvider<ConnectAccountNotifier, ConnectState>
+    connectAccountProvider =
+    StateNotifierProvider<ConnectAccountNotifier, ConnectState>(
+  (Ref ref) => ConnectAccountNotifier(
+    Services.instance.brokerConnect,
+    ref.read(accountsProvider.notifier),
+  ),
+);
+
+/// ---- Guard ----
+
+/// Fires at most one push per loss-threshold crossing as guard readings change.
+final Provider<GuardAlertMonitor> guardAlertMonitorProvider =
+    Provider<GuardAlertMonitor>(
+  (Ref ref) => GuardAlertMonitor(push: Services.instance.push),
+);
+
+final Provider<GuardStatus?> guardStatusProvider = Provider<GuardStatus?>((Ref ref) {
+  final TradingAccount? account = ref.watch(selectedAccountProvider);
+  if (account == null) return null;
+  return GuardStatus.compute(account);
+});
+
+/// ---- Trades ----
+
+final StateNotifierProvider<TradesNotifier, List<Trade>> tradesProvider =
+    StateNotifierProvider<TradesNotifier, List<Trade>>(
+  (Ref ref) => TradesNotifier(Services.instance.trades),
+);
+
+class TradesNotifier extends StateNotifier<List<Trade>> {
+  TradesNotifier(this._repo) : super(const <Trade>[]) {
+    unawaited(refresh());
+  }
+
+  final TradeRepository _repo;
+
+  Object? _error;
+  Object? get error => _error;
+
+  List<Trade> forAccount(String? accountId) => accountId == null
+      ? state
+      : state.where((Trade t) => t.accountId == accountId).toList();
+
+  Future<void> refresh() async {
+    try {
+      final List<Trade> rows = await _repo.fetchTrades();
+      _error = null;
+      state = rows;
+    } catch (e) {
+      _error = e;
+    }
+  }
+
+  /// Persists through the repository (mock in-memory, Supabase in live mode) and re-reads, so
+  /// the journal never shows an optimistic value the backend rejected.
+  Future<void> updateGrade(String tradeId, String grade) async {
+    await _repo.updateGrade(tradeId, grade);
+    await refresh();
+  }
+
+  Future<void> updateNotes(String tradeId, String notes) async {
+    await _repo.updateNotes(tradeId, notes);
+    await refresh();
+  }
+}
+
+/// ---- Signals ----
+
+final Provider<List<Signal>> signalsProvider =
+    Provider<List<Signal>>((Ref ref) => MockData.signals());
+
+/// ---- Journal stats ----
+
+class JournalStats {
+  const JournalStats({
+    required this.netPnl,
+    required this.winRate,
+    required this.profitFactor,
+    required this.avgR,
+    required this.count,
+  });
+
+  final double netPnl;
+  final double winRate;
+  final double profitFactor;
+  final double avgR;
+  final int count;
+}
+
+final Provider<JournalStats> journalStatsProvider = Provider<JournalStats>((Ref ref) {
+  final List<Trade> trades = ref.watch(tradesProvider);
+  final double net = trades.fold<double>(0, (double s, Trade t) => s + t.pnl);
+  final int wins = trades.where((Trade t) => t.pnl > 0).length;
+  final double grossWin =
+      trades.where((Trade t) => t.pnl > 0).fold<double>(0, (double s, Trade t) => s + t.pnl);
+  final double grossLoss =
+      trades.where((Trade t) => t.pnl < 0).fold<double>(0, (double s, Trade t) => s + t.pnl.abs());
+  final double avgR = trades.isEmpty
+      ? 0
+      : trades.fold<double>(0, (double s, Trade t) => s + (t.rMultiple ?? 0)) / trades.length;
+  return JournalStats(
+    netPnl: net,
+    winRate: trades.isEmpty ? 0 : (wins / trades.length) * 100,
+    profitFactor: grossLoss == 0 ? 0 : grossWin / grossLoss,
+    avgR: avgR,
+    count: trades.length,
+  );
+});

@@ -1,0 +1,130 @@
+# check_env.ps1 — TradeGuard environment readiness check.
+# Usage:  powershell -ExecutionPolicy Bypass -File tools\check_env.ps1
+# Read-only: installs nothing, changes nothing.
+
+$ErrorActionPreference = 'SilentlyContinue'
+$root = Split-Path -Parent $PSScriptRoot
+
+function Line($ok, $label, $detail) {
+    $mark = if ($ok) { '[ OK ]' } else { '[MISS]' }
+    if ($detail) { Write-Host ("{0} {1}  ->  {2}" -f $mark, $label, $detail) }
+    else         { Write-Host ("{0} {1}" -f $mark, $label) }
+}
+
+Write-Host "`n=== TradeGuard environment check ===" -ForegroundColor Cyan
+Write-Host ("Project: {0}`n" -f $root)
+
+# --- Toolchain ---------------------------------------------------------------
+# A shell launched BEFORE the PATH edit cannot see the new entries, so resolve
+# tools against the persisted User+Machine PATH as well as the live process PATH.
+$livePath = $env:Path
+$persisted = @(
+    [Environment]::GetEnvironmentVariable('Path', 'User'),
+    [Environment]::GetEnvironmentVariable('Path', 'Machine')
+) -join ';'
+$searchPath = $persisted
+
+function Find-Tool($name) {
+    foreach ($dir in ($searchPath -split ';' | Where-Object { $_ })) {
+        foreach ($e in @('', '.bat', '.cmd', '.exe')) {
+            $p = Join-Path $dir ($name + $e)
+            if (Test-Path $p -ErrorAction SilentlyContinue) { return $p }
+        }
+    }
+    return $null
+}
+
+$flutterExe = Find-Tool 'flutter'
+if ($flutterExe) {
+    $binDir = Split-Path $flutterExe -Parent
+    $fv = ((& $flutterExe --version 2>$null) | Where-Object { $_ -and $_.Trim() -ne '' } | Select-Object -First 1)
+    if (-not $fv) { $fv = "SDK at $binDir" }
+    if (($livePath -split ';') -contains $binDir) {
+        Line $true 'Flutter SDK' $fv
+    } else {
+        Line $true 'Flutter SDK' ("{0}  ->  on PATH for NEW terminals; re-open this one" -f $fv)
+    }
+} else {
+    Line $false 'Flutter SDK' 'not found - see INSTALL.md Step 2'
+}
+
+$dartExe = Find-Tool 'dart'
+$dartV = if ($dartExe) { ((& $dartExe --version 2>$null) | Where-Object { $_ -and $_.Trim() -ne '' } | Select-Object -First 1) } else { 'not on PATH' }
+Line ([bool]$dartExe) 'Dart' $dartV
+
+$java = Get-Command java -ErrorAction SilentlyContinue
+if ($java) {
+    $jv = (& java -version 2>&1 | Select-Object -First 1)
+    Line $true 'Java' $jv
+} else {
+    Line $false 'Java' 'JDK 17 required for Android builds'
+}
+
+$adbExe = Find-Tool 'adb'
+Line ([bool]$adbExe) 'Android platform-tools (adb)' $(if ($adbExe) { $adbExe } else { 'install via Android Studio SDK Manager' })
+
+# Android SDK packages `flutter build apk` needs
+$androidHome = [Environment]::GetEnvironmentVariable('ANDROID_HOME', 'User')
+if (-not $androidHome) { $androidHome = "$env:LOCALAPPDATA\Android\Sdk" }
+$ndkRoot = Join-Path $androidHome 'ndk'
+$hasNdk = (Test-Path $ndkRoot) -and
+          ((Get-ChildItem $ndkRoot -Directory -ErrorAction SilentlyContinue | Measure-Object).Count -gt 0)
+$sdkPkgs = @(
+    @{ label = 'cmdline-tools';                 ok = (Test-Path (Join-Path $androidHome 'cmdline-tools\latest'));              hint = 'see INSTALL.md Step 4a' },
+    @{ label = 'platforms;android-36';          ok = (Test-Path (Join-Path $androidHome 'platforms\android-36'));              hint = 'see INSTALL.md Step 4c' },
+    @{ label = 'ndk (flutter.ndkVersion)';      ok = $hasNdk;                                                                 hint = 'see INSTALL.md Step 4c' }
+)
+foreach ($pkg in $sdkPkgs) {
+    if ($pkg.ok) { Line $true ("Android SDK: {0}" -f $pkg.label) 'installed' }
+    else         { Line $false ("Android SDK: {0}" -f $pkg.label) $pkg.hint }
+}
+
+# --- Project files -----------------------------------------------------------
+$pairs = @(
+    @{ p = 'pubspec.yaml';                         need = $true },
+    @{ p = 'lib\main.dart';                        need = $true },
+    @{ p = 'assets\images\README.txt';             need = $true },
+    @{ p = 'android\app\build.gradle';             need = $true },
+    @{ p = 'android\gradlew';                      need = $true },
+    @{ p = 'android\gradle\wrapper\gradle-wrapper.jar'; need = $true },
+    @{ p = 'ios\Runner.xcodeproj';                 need = $false }
+)
+foreach ($e in $pairs) {
+    $exists = Test-Path (Join-Path $root $e.p)
+    $hint = ''
+    if (-not $exists -and $e.p -like 'android\gradlew*')  { $hint = 'optional - Flutter materialises these on the first Gradle build (or run: flutter create --platforms=android,ios --org com.tradeguard .)' }
+    if (-not $exists -and $e.p -like 'android\gradle\wrapper*') { $hint = 'optional - Flutter materialises this on the first Gradle build' }
+    if (-not $exists -and $e.p -like 'ios\*')             { $hint = 'generate on Mac/Codemagic (see ios/SETUP_NOTES.md)' }
+    if ($exists) { Line $true $e.p 'present' } else { Line $false $e.p $hint }
+}
+
+# stray default test that references a non-existent MyApp
+$strayTest = Join-Path $root 'test\widget_test.dart'
+if (Test-Path $strayTest) {
+    Write-Host "[WARN] test\widget_test.dart exists - generated by 'flutter create' and tests a missing MyApp; delete it." -ForegroundColor Yellow
+}
+
+# --- Secrets safety ----------------------------------------------------------
+foreach ($f in @('env\dev.json', 'env\prod.json', 'android\key.properties')) {
+    if (Test-Path (Join-Path $root $f)) {
+        Write-Host ("[WARN] {0} exists - confirm it is git-ignored and never committed." -f $f) -ForegroundColor Yellow
+    }
+}
+$gitignore = Join-Path $root '.gitignore'
+if ((Test-Path $gitignore) -and (Select-String -Path $gitignore -Pattern 'env/\*\.json' -Quiet)) {
+    Line $true '.gitignore ignores env/*.json' 'ok'
+} else {
+    Line $false '.gitignore ignores env/*.json' 'add it'
+}
+
+# --- Summary -----------------------------------------------------------------
+Write-Host "`n=== Next commands ===" -ForegroundColor Cyan
+Write-Host @"
+  cd "$root"
+  flutter pub get
+  flutter analyze
+  flutter test
+  flutter build apk --debug
+  flutter run                 # Android emulator or physical phone
+"@
+Write-Host 'Full walkthrough: INSTALL.md' -ForegroundColor Cyan

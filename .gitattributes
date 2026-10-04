@@ -1,0 +1,23 @@
+# Normalise line endings in the repo; check out LF so shell scripts (gradlew)
+# and Dart sources stay executable across Windows/macOS/Linux dev machines.
+* text=auto eol=lf
+
+# Windows scripts must stay CRLF for cmd.exe
+*.bat  text eol=crlf
+*.cmd  text eol=crlf
+
+# Shell scripts must stay LF even on Windows (gradlew)
+gradlew text eol=lf
+*.sh   text eol=lf
+
+# Keep binaries intact
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.gif   binary
+*.ico   binary
+*.pdf   binary
+*.zip   binary
+*.jar   binary
+*.jks   binary
+*.keystore binary

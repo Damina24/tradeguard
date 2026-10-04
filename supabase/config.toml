@@ -1,0 +1,38 @@
+# Supabase local config (Phase 0). Fill project ref after `supabase link`.
+project_id = "tradeguard"
+
+[api]
+enabled = true
+port = 54321
+schemas = ["public", "storage", "graphql_public"]
+extra_search_path = ["public", "extensions"]
+max_rows = 1000
+
+[db]
+port = 54322
+major_version = 15
+
+[studio]
+enabled = true
+port = 54323
+
+[functions.guard-check]
+verify_jwt = false
+
+[functions.sync-trades]
+verify_jwt = false
+
+[functions.meta-connect]
+verify_jwt = true
+
+[functions.ai-review]
+verify_jwt = true
+
+[functions.ai-analyze-chart]
+verify_jwt = true
+
+[functions.copy-signal]
+verify_jwt = true
+
+[functions.purge-account]
+verify_jwt = true
