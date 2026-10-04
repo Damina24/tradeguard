@@ -49,11 +49,14 @@ class SupabaseTradeImportRepository implements TradeImportRepository {
             },)
         .toList();
 
-    // onConflict gives the skip/replace decision a database-level guarantee, so a race
-    // between two imports of the same file cannot produce two rows.
+    // Conflict target is (account_id, external_id): migration 0005 corrected the original
+    // (user_id, external_id), which collided when one trader held two broker accounts that
+    // both used the same deal id. This also gives the skip/replace decision a database-level
+    // guarantee, so a race between two imports cannot produce two rows. `user_id` is NOT NULL
+    // and is filled by RLS/PostgREST, so it is deliberately absent from these rows.
     await _service.client
         .from('trades')
-        .upsert(rows, onConflict: 'user_id,external_id');
+        .upsert(rows, onConflict: 'account_id,external_id');
     return rows.length;
   }
 }

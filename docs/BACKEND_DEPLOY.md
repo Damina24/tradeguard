@@ -35,8 +35,8 @@ supabase link --project-ref <project-ref>
 supabase db push
 ```
 
-That applies `0001_init.sql` … `0004_guard_check_cron.sql`. The last one needs two Vault secrets, so
-insert them **before** pushing it — or re-run it afterwards:
+That applies `0001_init.sql` … `0005_sync_trades.sql`. The cron migrations need two Vault
+secrets, so insert them **before** pushing them — or re-run them afterwards:
 
 ```sql
 -- Dashboard → SQL Editor, or: psql "$DATABASE_URL"
@@ -45,11 +45,18 @@ select vault.create_secret('<service_role key>', 'service_role_key');
 ```
 
 Why Vault instead of a literal in the SQL: `cron.job.command` is a plain string in a table anyone
-with SQL access can read. Reading the secret at run time keeps the key out of it. The job calls
-`guard-check` with `Authorization: Bearer <service_role>`, which is what the function now requires.
+with SQL access can read. Reading the secret at run time keeps the key out of it. The jobs call
+`guard-check` / `sync-trades` with `Authorization: Bearer <service_role>`, which is what both
+functions now require.
+
+`0005_sync_trades.sql` also **corrects the `trades` dedupe key** from `(user_id, external_id)`
+to `(account_id, external_id)`. A broker deal id is unique per broker *account*, so with the old
+key a trader holding two broker accounts would have had one account's sync overwrite the
+other's rows. Read the comment at the top of the file before pushing it.
 
 ```sql
-select jobname, schedule, active from cron.job where jobname = 'guard-check-minutely';
+select jobname, schedule, active from cron.job
+ where jobname in ('guard-check-minutely', 'sync-trades-5min');
 ```
 
 ### Fire it once by hand
@@ -77,8 +84,8 @@ supabase secrets set FIREBASE_SERVICE_ACCOUNT='{"type":"service_account","projec
 
 | Secret | Needed for | If missing |
 |---|---|---|
-| `SUPABASE_SERVICE_KEY` | the guard worker | function 500s |
-| `METAAPI_TOKEN` | reading live equity | falls back to the last snapshot; Guard shows STALE |
+| `SUPABASE_SERVICE_KEY` | both cron workers | functions 500s |
+| `METAAPI_TOKEN` | reading live equity + syncing trades | equity falls back to the last snapshot; no trade sync |
 | `FIREBASE_SERVICE_ACCOUNT` | the 70/90 push | numbers are stored, no notification |
 
 `FIREBASE_SERVICE_ACCOUNT` is the **whole** service-account JSON (Firebase console → Project settings
@@ -86,7 +93,37 @@ supabase secrets set FIREBASE_SERVICE_ACCOUNT='{"type":"service_account","projec
 or `\n` breaks the secret.
 
 ```bash
-supabase functions deploy guard-check meta-connect
+supabase functions deploy guard-check sync-trades meta-connect
+```
+
+### Fire `sync-trades` once by hand
+
+```bash
+curl -X POST "https://<project-ref>.supabase.co/functions/v1/sync-trades" \
+  -H "Authorization: Bearer <service_role>" \
+  -H "apikey: <service_role>" \
+  -H "Content-Type: application/json" -d '{}'
+# → {"ok":true,"at":"…","checked":1,"synced":1,"imported":12,"skipped":0,"failed":0}
+```
+
+Without the bearer you get `401 {"ok":false,"error":"Unauthorized"}` — that is the check working.
+Run it twice: the second run must report `imported:0` and add no rows, because the upsert is keyed
+on `(account_id, external_id)`. Check with:
+
+```sql
+select account_id, count(*) from trades group by 1;
+select * from trade_sync_cursors;
+```
+
+To sync a single account by id, pass `{"account_id":"<uuid>"}`. The id must be one of your own
+active accounts or the call returns `404` — it is never used to choose a write target.
+
+Its policy lives in `supabase/functions/sync-trades/shared.ts` and is unit-tested without a
+runtime:
+
+```bash
+node supabase/functions/sync-trades/sync-trades_test.ts
+# → sync-trades: 41 tests passed
 ```
 
 ---

@@ -166,7 +166,7 @@ from trades group by 1,2,3,4,5;
 |---|---|---|
 | `meta-connect` | HTTP (auth) | register MetaAPI account, return id |
 | `guard-check` | cron 1/min (pg_cron, migration 0004) | snapshot equity, compute guard, push 70/90, prune >30d |
-| `sync-trades` | cron 5/min | pull deals → upsert trades |
+| `sync-trades` | cron 5/min (pg_cron, migration 0005) | pull deals → upsert trades on `(account_id, external_id)`, advance `trade_sync_cursors` |
 | `ai-review` | HTTP (auth) | OpenAI trade review JSON |
 | `ai-analyze-chart` | HTTP (auth) | OpenAI vision → plan JSON |
 | `copy-signal` | HTTP (auth) | lots calc → MetaAPI order (paper/live) |

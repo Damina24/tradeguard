@@ -51,6 +51,28 @@ Four deliberate calls worth recording:
 Remaining Phase 1 work is gated on Supabase + MetaAPI + Firebase credentials 🧑. The full
 bring-up, including the Vault secrets the cron job needs, is `docs/BACKEND_DEPLOY.md`.
 
+8. **Phase 2 reuses Phase 1's model rather than forking it.** `sync-trades` and the CSV/HTML
+   importer both produce the same `TradeRecord` and persist through the same
+   `TradeImportRepository`. A deal id is therefore recognised identically whether it arrived as
+   a file the trader uploaded or as a page MetaAPI returned — which is what stops a manual
+   import and the cron worker from producing two copies of the same trade.
+9. **Migration 0005 corrects the trades dedupe key from `(user_id, external_id)` to
+   `(account_id, external_id)`.** The original key was wrong for broker data: a deal id is
+   unique only *within one broker account*, so a trader holding an FTMO and an Exness account
+   would have had the second account's sync UPDATE the first account's row. The new key is
+   also what `InMemoryTradeImportRepository` and `TradeRecord` already used, so this makes the
+   database agree with the code.
+10. **The sync cursor narrows the window; `external_id` guarantees correctness.** Each run
+    re-reads 6 hours before the watermark on purpose, because brokers book commission and swap
+    after a deal closes. The overlap is free because the upsert key is the deal id, not a
+    timestamp — two trades can share a millisecond, and a broker can restate a close time. The
+    watermark also only ever moves FORWARD, so a late correction cannot rewind progress and make
+    an account re-read forever.
+11. **A failed sync does not advance the watermark.** Otherwise trades that arrived during an
+    outage would be skipped permanently. Failures bump `consecutive_failures`, which drives an
+    exponential backoff capped at an hour so a dead account stops consuming the shared MetaAPI
+    allowance on every five-minute tick.
+
 5. **Social sign-in verifies on the server, not the client.** `sign_in_with_apple` /
    `google_sign_in` only produce an ID token; `SupabaseAuthRepository` exchanges it via
    `signInWithIdToken`, so GoTrue checks the signature, `aud`, `iss` and — for Apple — the nonce.
@@ -67,8 +89,8 @@ bring-up, including the Vault secrets the cron job needs, is `docs/BACKEND_DEPLO
 
 | # | Task | Status |
 |---|---|---|
-| 2.1 | CSV/HTML import + dupe handling | ⬜ |
-| 2.2 | sync-trades worker | ⬜ |
+| 2.1 | CSV/HTML import + dupe handling | ✅ (`TradeRecord`, `TradeFileParser` + registry, mock-first `TradeImportRepository`) |
+| 2.2 | sync-trades worker | ✅ idempotent + incremental (`trade_sync_cursors`, `(account_id, external_id)` upsert, cron 5/min) |
 | 2.3 | Trade detail + grading + screenshots | ⬜ |
 | 2.4 | Pattern views + leaks UI | ⬜ |
 | 2.5 | ai-review card | ⬜ |

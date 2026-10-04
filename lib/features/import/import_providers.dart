@@ -24,6 +24,11 @@ final Provider<TradeParserRegistry> tradeParserRegistryProvider =
 ///
 /// Mock mode writes to memory so the whole import flow is exercisable with no Supabase project;
 /// live mode writes to the `trades` table.
+/// The repository the importer persists through.
+///
+/// Public (rather than file-private) because Task 2.2's sync path must write through the SAME
+/// boundary — a second repository would be a second definition of "one row per external id",
+/// which is exactly the duplication this design exists to prevent.
 final Provider<TradeImportRepository> tradeImportRepositoryProvider =
     Provider<TradeImportRepository>((Ref ref) {
   return Services.instance.isMock
