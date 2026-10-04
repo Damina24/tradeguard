@@ -7,9 +7,11 @@ import '../../../core/constants/app_strings.dart';
 import '../../../core/services/auth_provider.dart';
 import '../../../core/services/auth_repository.dart';
 import '../../../core/services/services.dart';
+import '../../../core/services/social_auth.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_text_styles.dart';
 import '../../../core/widgets/disclaimer_note.dart';
+import '../widgets/social_sign_in_buttons.dart';
 
 /// Email + password sign-in, sign-up and password reset on one route.
 ///
@@ -84,6 +86,29 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
     if (outcome.isSuccess) {
       _toast('If that email exists, a reset link is on its way.');
     }
+  }
+
+  Future<void> _socialSignIn(SocialProvider provider) async {
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+
+    final AuthOutcome outcome =
+        await ref.read(authProvider.notifier).signInWithProvider(provider);
+
+    if (!mounted) return;
+    setState(() {
+      _busy = false;
+      // A dismissed Apple/Google sheet comes back as a success with no user and no error, so there
+      // is nothing to report in that case.
+      if (outcome.needsEmailConfirmation) {
+        _error = null;
+        _toast('Check your inbox to confirm your email.');
+      } else {
+        _error = outcome.error;
+      }
+    });
   }
 
   void _toast(String message) {
@@ -223,6 +248,10 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
                         'Forgot password?',
                         style: AppTextStyles.muted,
                       ),
+                    ),
+                    SocialSignInButtons(
+                      busy: _busy,
+                      onSignIn: _socialSignIn,
                     ),
                     const SizedBox(height: 16),
                     const DisclaimerNote(),

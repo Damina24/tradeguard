@@ -165,12 +165,23 @@ from trades group by 1,2,3,4,5;
 | Function | Trigger | Purpose |
 |---|---|---|
 | `meta-connect` | HTTP (auth) | register MetaAPI account, return id |
-| `guard-check` | cron 1/min | snapshot equity, compute guard, push 70/90 |
+| `guard-check` | cron 1/min (pg_cron, migration 0004) | snapshot equity, compute guard, push 70/90, prune >30d |
 | `sync-trades` | cron 5/min | pull deals → upsert trades |
 | `ai-review` | HTTP (auth) | OpenAI trade review JSON |
 | `ai-analyze-chart` | HTTP (auth) | OpenAI vision → plan JSON |
 | `copy-signal` | HTTP (auth) | lots calc → MetaAPI order (paper/live) |
 | `purge-account` | HTTP (auth) | delete user data for Account Deletion |
+
+`guard-check` is invoked by pg_cron + pg_net presenting the **service-role** key as a bearer token
+(`supabase/config.toml` keeps `verify_jwt = true`, and the function re-checks the key itself, so a
+guessed URL cannot make us spend MetaAPI allowance). Bring-up: `docs/BACKEND_DEPLOY.md`.
+
+### Snapshot retention
+
+`equity_snapshots` gains one row per account per minute — ~525k rows per account per year. `guard-check`
+deletes rows older than **30 days** once a day (03:00 UTC), which is what the
+`idx_equity_snapshots_created` index exists for. Anything longer than 30 days of minute-level equity
+is not something the app charts.
 
 ## 7. API Contracts (app → edge)
 

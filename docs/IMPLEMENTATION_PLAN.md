@@ -21,15 +21,15 @@ Status legend: ✅ done · 🔄 in progress · ⬜ todo · 🧑 human gate
 
 | # | Task | Status |
 |---|---|---|
-| 1.1 | Auth — email/password, sign-up, reset, router guard | ✅ (Apple/Google still 🧑) |
+| 1.1 | Auth — email/password, sign-up, reset, router guard | ✅ Apple/Google too (`SocialAuthService`; provider keys 🧑) |
 | 1.2 | Broker connect flow → `meta-connect` | ✅ (mock + live service, Edge Function implemented) |
 | 1.3 | guard-status provider (mock → live repositories) | ✅ |
 | 1.4 | Guard Home UI wired | ✅ |
-| 1.5 | FCM topic subscription + 70/90 in-app alert | ✅ (server push 🧑) |
+| 1.5 | FCM topic subscription + 70/90 in-app alert | ✅ server side too: `guard-check` scheduled 1/min by pg_cron, service-role guarded, 30-day retention |
 | 1.6 | Calculators (lot/RR/margin/dd) | ✅ |
 | 1.7 | P&L calendar + trade list | ✅ |
 
-Two deliberate calls worth recording:
+Four deliberate calls worth recording:
 
 1. **The 70/90 *push* is server-side.** `docs/BACKEND_SCHEMA.md` gives `guard-check` (cron 1/min)
    ownership of pushing. The app therefore only subscribes the device to that account's FCM topic
@@ -48,7 +48,20 @@ Two deliberate calls worth recording:
    has no field that could hold it, and error strings from MetaAPI are never echoed verbatim
    because a provider error can quote the login back.
 
-Remaining Phase 1 work is gated on Supabase + MetaAPI + Firebase credentials 🧑.
+Remaining Phase 1 work is gated on Supabase + MetaAPI + Firebase credentials 🧑. The full
+bring-up, including the Vault secrets the cron job needs, is `docs/BACKEND_DEPLOY.md`.
+
+5. **Social sign-in verifies on the server, not the client.** `sign_in_with_apple` /
+   `google_sign_in` only produce an ID token; `SupabaseAuthRepository` exchanges it via
+   `signInWithIdToken`, so GoTrue checks the signature, `aud`, `iss` and — for Apple — the nonce.
+   The raw nonce is what travels back to GoTrue; the SHA-256 we sent to Apple is not, which is the
+   whole point of the nonce.
+6. **A dismissed Apple/Google sheet is not an error.** `SocialAuthResult.cancelled` maps onto
+   `AuthOutcome.done()`, so backing out of the popup leaves the screen untouched. Every other failure
+   becomes `SocialAuthException` with trader-safe copy — raw plugin strings are never rendered.
+7. **`guard-check` authenticates its own caller.** `verify_jwt = false` means the platform checked
+   nothing, which would let anyone with the URL make us spend MetaAPI allowance on demand. It now
+   requires the service-role bearer that pg_cron presents.
 
 ## Phase 2 — Journal + AI
 

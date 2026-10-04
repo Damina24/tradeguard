@@ -28,6 +28,10 @@ dependencies:
   firebase_messaging: ^15.0.4
   purchases_flutter: ^8.1.2
   logger: ^2.4.0
+  # SHA-256 of the Apple sign-in nonce (see SocialAuthService).
+  crypto: ^3.0.6
+  sign_in_with_apple: ^8.2.0
+  google_sign_in: ^7.2.0
 
 dev_dependencies:
   flutter_test:

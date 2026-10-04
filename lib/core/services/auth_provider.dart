@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'auth_repository.dart';
 import 'services.dart';
+import 'social_auth.dart';
 
 /// Auth state for the whole app.
 ///
@@ -56,6 +57,10 @@ class AuthNotifier extends StateNotifier<AppUser?> {
 
   Future<AuthOutcome> sendPasswordReset(String email) =>
       _run(() => _repo.sendPasswordReset(email));
+
+  /// Apple/Google sign-in. Shares [_busy] with the form so the two paths cannot interleave.
+  Future<AuthOutcome> signInWithProvider(SocialProvider provider) =>
+      _run(() => _repo.signInWithProvider(provider));
 
   Future<void> signOut() async {
     await _repo.signOut();

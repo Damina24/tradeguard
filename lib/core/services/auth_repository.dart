@@ -1,3 +1,5 @@
+import 'social_auth.dart';
+
 /// Backend-agnostic representation of the signed-in user.
 class AppUser {
   const AppUser({required this.id, this.email, this.plan = 'free'});
@@ -50,12 +52,19 @@ abstract class AuthRepository {
   Future<void> signOut();
 
   Future<AuthOutcome> sendPasswordReset(String email);
+
+  /// Signs in with an Apple/Google identity token. Returns [AuthOutcome.done] — a success carrying
+  /// no user — when the trader dismisses the system sheet, so nothing is shown for it.
+  Future<AuthOutcome> signInWithProvider(SocialProvider provider);
 }
 
 /// Offline auth so the whole app can be exercised without a backend. Any well-formed email plus a
 /// non-empty password succeeds.
 class MockAuthRepository implements AuthRepository {
-  MockAuthRepository();
+  MockAuthRepository([SocialAuthService? social])
+      : _social = social ?? MockSocialAuthService();
+
+  final SocialAuthService _social;
 
   static const String demoId = 'demo-user';
   static const String demoEmail = 'demo@tradeguard.app';
@@ -94,6 +103,23 @@ class MockAuthRepository implements AuthRepository {
       return const AuthOutcome.failure('Enter a valid email address.');
     }
     return const AuthOutcome.done();
+  }
+
+  @override
+  Future<AuthOutcome> signInWithProvider(SocialProvider provider) async {
+    try {
+      final SocialAuthResult result = await _social.signIn(provider);
+      final SocialCredential? credential = result.credential;
+      // Dismissing the sheet is not an error, so it must not raise a red banner.
+      if (credential == null) return const AuthOutcome.done();
+      _user = AppUser(
+        id: 'demo-${credential.provider.name}',
+        email: credential.email,
+      );
+      return AuthOutcome.success(_user!);
+    } on SocialAuthException catch (e) {
+      return AuthOutcome.failure(e.message);
+    }
   }
 
   static bool isValidEmail(String email) => _emailPattern.hasMatch(email.trim());

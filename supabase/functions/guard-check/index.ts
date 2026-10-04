@@ -9,6 +9,9 @@
 //   METAAPI_TOKEN             optional — without it we re-use the last known equity instead of failing
 //   FIREBASE_SERVICE_ACCOUNT  optional — without it we compute + store but do not push
 //
+// Scheduling: migration `0004_guard_check_cron.sql` runs this every minute through pg_cron + pg_net
+// and presents the service-role key. See `docs/BACKEND_DEPLOY.md`.
+//
 // Crossing detection is `prevUsed < T <= nowUsed` against the previous snapshot, which is exactly
 // the rule `GuardAlertEvaluator` applies in the Flutter app, so server and client can never
 // disagree about when an alert fires. Every level is edge-triggered, so an account that stays in
@@ -204,6 +207,51 @@ async function dayStartEquity(sb: any, accountId: string, now: Date): Promise<nu
   return row ? Number(row.equity) : null;
 }
 
+/** How much minute-level history to keep. ~43k rows per account at 30 days. */
+export const SNAPSHOT_RETENTION_DAYS = 30;
+
+/**
+ * Daily at 03:00 UTC.
+ *
+ * Pruning on a fixed minute means the delete runs once a day instead of on all 1440 invocations.
+ * If the scheduler is down for that minute the window simply rolls forward a day — harmless.
+ */
+export function shouldPrune(now: Date): boolean {
+  return now.getUTCHours() === 3 && now.getUTCMinutes() === 0;
+}
+
+/**
+ * Whether the caller may spend MetaAPI allowance on demand.
+ *
+ * `verify_jwt = false` on this function means the platform checks nothing, so the function checks
+ * for itself: the cron job presents the service-role key. Without this, anyone who guessed the URL
+ * could force us to re-read every connected account's equity once a minute.
+ *
+ * With no key configured (`supabase functions serve` locally) the host is trusted, because there is
+ * nothing to compare against.
+ */
+export function authorized(
+  header: string | null,
+  serviceKey: string | undefined,
+): boolean {
+  if (!serviceKey) return true;
+  if (!header || !header.startsWith('Bearer ')) return false;
+  return header.slice('Bearer '.length).trim() === serviceKey;
+}
+
+/** Deletes snapshots past the retention window. Runs with the service key, so RLS is bypassed. */
+async function pruneSnapshots(sb: any, now: Date): Promise<number> {
+  const cutoff = new Date(
+    now.getTime() - SNAPSHOT_RETENTION_DAYS * 86_400_000,
+  ).toISOString();
+  const { count, error } = await sb
+    .from('equity_snapshots')
+    .delete({ count: 'exact' })
+    .lt('created_at', cutoff);
+  if (error) throw error;
+  return count ?? 0;
+}
+
 type Notifier = (topic: string, title: string, body: string) => Promise<void>;
 
 /** Firebase Admin notifier, or null when `FIREBASE_SERVICE_ACCOUNT` is absent. */
@@ -227,9 +275,13 @@ async function pushNotifier(): Promise<Notifier | null> {
   }
 }
 
-Deno.serve(async () => {
+Deno.serve(async (req: Request) => {
   const now = new Date();
-  const summary = { checked: 0, snapshots: 0, alerts: 0, skipped: 0 };
+  const summary = { checked: 0, snapshots: 0, alerts: 0, skipped: 0, pruned: 0 };
+
+  if (!authorized(req.headers.get('Authorization'), Deno.env.get('SUPABASE_SERVICE_KEY'))) {
+    return json({ ok: false, error: 'Unauthorized' }, 401);
+  }
 
   try {
     // deno-lint-ignore no-explicit-any
@@ -247,6 +299,10 @@ Deno.serve(async () => {
 
     if (error) throw error;
     summary.checked = (accounts || []).length;
+
+    // Minute-level history is unbounded without this (525k rows/account/year), so the retention
+    // sweep is part of the same job that produces the rows.
+    if (shouldPrune(now)) summary.pruned = await pruneSnapshots(sb, now);
 
     for (const account of (accounts || []) as BrokerAccount[]) {
       try {

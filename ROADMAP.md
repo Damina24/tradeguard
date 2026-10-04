@@ -19,11 +19,13 @@ Exit criteria: app builds, boots to Guard screen with mock EVAL/FUNDED accounts,
 - ✅ Service layer: mock ↔ Supabase repositories behind a `Services` locator (auth / accounts /
   trades / push), so the app boots with no backend and switches to live via `SUPABASE_URL`
 - ✅ Auth: email + password, sign-up, password reset, router guard. Mock mode auto-signs-in a demo
-  user so the app still boots straight to Guard. Apple/Google still to do 🧑
+  user so the app still boots straight to Guard. Apple + Google sign-in behind
+  `SocialAuthService` (ID token → `signInWithIdToken`); provider credentials still 🧑
 - ✅ Broker accounts CRUD + connect flow (MetaAPI via Edge Function, mock first): Settings lists
   each account with an equity-guard toggle and a confirmed remove; the connect sheet relays
   credentials to `meta-connect` and keeps only `metaapi_account_id`
-- ⬜ Equity snapshot worker (cron 1/min) + `guard-check` Edge Function *(server owns the 70/90 push)*
+- ✅ Equity snapshot worker + `guard-check`: scheduled 1/min by pg_cron (migration 0004), requires the
+  service-role bearer, prunes snapshots past 30 days, and owns the 70/90 FCM push
 - ✅ Guard Home: daily-loss meter, trailing drawdown distance, profit-to-target, wired to repositories
 - ✅ Alerts: device subscribes to the account's FCM topic; 70/90 crossings raise an in-app critical
   banner (de-duplicated, so a 1/min refresh never spams)
@@ -32,12 +34,9 @@ Exit criteria: app builds, boots to Guard screen with mock EVAL/FUNDED accounts,
 
 Exit: trader can watch live guard numbers and receive a breach alert.
 
-> Remaining Phase 1 gaps are all **human gates**: Supabase project, MetaAPI token, and
-> `google-services.json` / `Google-Info.plist`. The client code paths exist and are unit-tested;
-> they cannot be exercised end-to-end until those keys exist.
->
-> Phase 1 code is now feature-complete. The next buildable unit of work is Phase 2 (task 2.1,
-> CSV/HTML import), which is mock-first and needs no new credentials.
+> Phase 1 is code-complete. Deploy it with **`docs/BACKEND_DEPLOY.md`** — the remaining steps are
+> credentials (Supabase project, MetaAPI token, Firebase, Apple/Google OAuth clients) and cannot be
+> automated. Until then the app runs in mock mode with seeded demo data.
 
 ## Phase 2 — Journal + AI (Week 4–6) ⬜
 

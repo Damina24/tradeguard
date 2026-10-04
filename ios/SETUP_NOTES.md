@@ -47,6 +47,30 @@ Set in Xcode → Runner target → Signing & Capabilities, and in Codemagic via
 
 `ITSAppUsesNonExemptEncryption` → `false` (HTTPS only), which skips the manual prompt.
 
+## Sign in with Apple / Google (human input)
+
+Two things are needed on top of the Info.plist keys above:
+
+1. **Sign in with Apple** capability on the Runner target (Signing & Capabilities). Without it
+   `getAppleIDCredential` throws "not available" and the app shows *"Sign in with Apple is not
+   available on this device."*
+2. A **URL Type** for Google sign-in — the scheme is the iOS client id with dots reversed, e.g.
+   `com.googleusercontent.apps.1234567890-abcdef`:
+
+```xml
+<key>CFBundleURLTypes</key>
+<array>
+  <dict>
+    <key>CFBundleURLSchemes</key>
+    <array>
+      <string>com.googleusercontent.apps.__PLACEHOLDER__</string>
+    </array>
+  </dict>
+</array>
+```
+
+`GOOGLE_IOS_CLIENT_ID` in `env/*.json` must match that client. See `docs/BACKEND_DEPLOY.md`.
+
 ## Push notifications
 
 Add the **Push Notifications** capability plus the APNs key in App Store Connect, then upload

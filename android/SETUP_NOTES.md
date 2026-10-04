@@ -67,6 +67,26 @@ flutter build apk --debug
 flutter run
 ```
 
+## Sign in with Apple / Google (human input)
+
+The plugins are wired; they need project credentials.
+
+- **Apple on Android** runs the flow in a Chrome Custom Tab, so it needs the Service ID
+  `com.tradeguard.app.web` as `APPLE_WEB_CLIENT_ID` in `env/dev.json`. Without it the button reports
+  *"Apple sign-in is not configured for this build"* instead of crashing.
+- **Google** needs the *Web* OAuth client id as `GOOGLE_SERVER_CLIENT_ID` (Android mints the id token
+  with it) and the iOS client id as `GOOGLE_IOS_CLIENT_ID`. `google-services.json` must sit in
+  `android/app/`.
+- The debug/release **SHA-1 fingerprints** of the upload keystore have to be listed on the Android
+  OAuth client, otherwise Google returns `DEVELOPER_ERROR` (10).
+
+Full walkthrough: `docs/BACKEND_DEPLOY.md`.
+
+## Push notifications (human input)
+
+`google-services.json` in `android/app/` enables FCM. The `guard_alerts` channel id already matches
+`FcmPushService.channelId` and the manifest meta-data.
+
 ## Launcher icon
 
 `AndroidManifest.xml` deliberately sets no `android:icon`, so the app builds with no launcher

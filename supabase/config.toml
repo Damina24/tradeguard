@@ -16,11 +16,14 @@ major_version = 15
 enabled = true
 port = 54323
 
+# guard-check and sync-trades are invoked by pg_cron, which presents the service_role key as a
+# bearer token (migration 0004 + docs/BACKEND_DEPLOY.md). verify_jwt stays on so the platform
+# rejects anonymous calls; the function additionally requires the service-role key itself.
 [functions.guard-check]
-verify_jwt = false
+verify_jwt = true
 
 [functions.sync-trades]
-verify_jwt = false
+verify_jwt = true
 
 [functions.meta-connect]
 verify_jwt = true
