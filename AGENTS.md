@@ -66,7 +66,7 @@ flutter build appbundle --release
 flutter build ipa --release        # via Codemagic
 dart run build_runner build --delete-conflicting-outputs
 supabase db push                    # after keys configured
-supabase functions deploy guard-check sync-trades ai-review ai-analyze-chart copy-signal
+supabase functions deploy guard-check sync-trades ai-review ai-analyze-chart copy-signal market-bars
 ```
 
 ## App runs in MOCK mode by default
@@ -79,5 +79,6 @@ demo data (EVAL $100k FTMO, FUNDED $50k). This lets the whole UI run without any
 - No claims of guaranteed profit, win rate promises, or "best signals".
 - No `MetaTrader`, `MT4`, `MT5`, `TradingView` inside the app display name.
 - Display name must remain `TradeGuard - Forex Signals`.
-- Risk disclaimer on: paywall, copy-signal confirm, signals screen footer, settings.
+- Risk disclaimer on: paywall, copy-signal confirm, signals screen footer, settings, and the
+  replay/backtest screens.
 - No broker credentials stored client-side or server-side.

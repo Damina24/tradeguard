@@ -160,7 +160,51 @@ bring-up, including the Vault secrets the cron job needs, is `docs/BACKEND_DEPLO
 | 2.3 | Trade detail + grading + screenshots | ✅ detail, deterministic A–D checklist grade, share card (screenshot upload still ⬜) |
 | 2.4 | Pattern views + leaks UI | ✅ `PatternRow`/`PatternMetrics` over `v_patterns`, mock-first, conservative leak detector; migration 0006 makes the views RLS-respecting 🧑 (not yet applied live) |
 | 2.5 | ai-review card | ✅ `ai-review` Edge Function (allowlist projection, prompt versioned in source) + `AiReviewCard` on S5, mock-first; migration 0007 makes `ai_reviews` SELECT-only and idempotent 🧑 (not yet applied live) |
-| 2.6 | Replay lite | ⬜ |
+| 2.6 | Replay lite | ✅ bar-by-bar replay engine (pessimistic fill rules), `ReplayScan` with a reporting floor, fl_chart chart + play/step transport, mock-first; `market-bars` Edge Function + migration 0008 open `prices_cache` for reads and revoke every client write 🧑 **not live** — 0008 approved but unverified; blocked on the 3a gate in `docs/BACKEND_DEPLOY.md` |
+
+Ten deliberate calls worth recording, because a backtest is the easiest place in this product to
+ship a number that is technically correct and materially misleading:
+
+1. **Every fill and exit rule is pessimistic, and each one costs performance.** A fill needs a bar
+   that *trades through* the entry and fills at the worse of entry/open; the entry bar cannot also be
+   the exit bar; a bar spanning BOTH the stop and the target is a **loss**, because OHLC does not
+   record intrabar order and "unknowable" must resolve to the worse outcome; and no exit is invented at
+   the end of the series. The same-bar rule is the load-bearing one — resolving it optimistically is
+   the classic way a losing system gets reported as a winning one.
+2. **A setup that never fills is not a loss.** `ReplayResult.notFilled` exists so the aggregate can
+   exclude it from the denominator. Counting it as a loss makes a selective entry look like it missed
+   money, which is the most flattering error available to a backtest.
+3. **An open position is not a win.** A trade still running when the visible bars run out is
+   `unresolved`: it counts as a trade (it existed and held risk) but never as a win, and it is
+   labelled `STILL OPEN` rather than presented as a result.
+4. **`ReplayScan` refuses to state a rate it cannot support.** Below `minimumTrades` (10, not 5 — a
+   scan re-anchors on every bar so neighbouring results are strongly correlated and one trend
+   manufactures a dozen apparent "trades") the card prints the sample size and *no rate at all*.
+   Same rule, same reason as `LeakDetector` in 2.4. A win rate off three correlated bars is not a weak
+   statistic, it is a misleading one.
+5. **Profit factor is null, never infinite.** A flawless run has nothing to divide by, and printing
+   "∞" beside a backtest invites the reader to treat it as a measured edge.
+6. **Every pip and R figure goes through `TradingMath`.** A 0.10 move is 10 pips of gold and 1000 of
+   EURUSD; treating them alike is the easiest way to publish a backtest that is off by 100x. The sign
+   of R is built from BOTH the price move and the direction — an MAE that comes back positive is
+   exactly the bug that makes a risky setup look safe, and the engine test asserts against it.
+7. **The mock generates bars, it does not recall them.** `MockPriceBarRepository` runs a seeded walk
+   rather than deriving bars from `MockData.trades()`. Inventing bars to agree with a set of trades
+   would be a second, hidden claim that those trades happened at those prices. Its output is labelled
+   `SYNTHETIC DEMO` on the chart, because an unlabelled generated chart is indistinguishable from the
+   market.
+8. **A cached series states its age; a generated one states it is not the market.** Provenance lives on
+   the data (`PriceSeriesSource`) and is rendered beside the chart, so there is no path to a chart
+   that does not say where its bars came from.
+9. **The cursor only ever reveals a prefix.** `visibleBarsProvider` slices the series, so a bar the
+   trader has not stepped to cannot influence the verdict printed beside the chart. That is what makes
+   this a replay rather than a static report, and it is structural rather than a thing to remember.
+10. **`TWELVEDATA_KEY` never reaches the device, and no client may write the cache.** A
+    `--dart-define` key ships inside the APK, where an installer can extract it and spend our metered
+    allowance from outside the product. So the fetch is server-side only, the symbol is an ALLOWLIST
+    (not a blacklist — an open field would let any signed-in user bill us arbitrary instruments), and
+    migration 0008 revokes every client write to `prices_cache`. That closes a cross-tenant poisoning
+    route which would otherwise let a user POST bars that every other trader's backtest then charts.
 
 ## Phase 3 — Signals + Copy
 

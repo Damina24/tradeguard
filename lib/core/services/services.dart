@@ -5,6 +5,9 @@ import '../../features/ai_review/data/supabase_ai_review_repository.dart';
 import '../../features/patterns/data/mock_pattern_repository.dart';
 import '../../features/patterns/data/pattern_repository.dart';
 import '../../features/patterns/data/supabase_pattern_repository.dart';
+import '../../features/replay/data/mock_price_bar_repository.dart';
+import '../../features/replay/data/price_bar_repository.dart';
+import '../../features/replay/data/supabase_price_bar_repository.dart';
 import 'account_repository.dart';
 import 'auth_repository.dart';
 import 'broker_connect_service.dart';
@@ -52,6 +55,14 @@ class Services {
   late final AiReviewRepository aiReviews = isMock
       ? MockAiReviewRepository()
       : SupabaseAiReviewRepository();
+
+  /// OHLC bars for the replay (task 2.6). Mock mode generates a deterministic walk per symbol, so the
+  /// replay screen — including the scan and its bar-by-bar controls — is exercisable with no backend
+  /// and no `TWELVEDATA_KEY`. The mock labels its own output `SYNTHETIC DEMO` on the chart, because an
+  /// unlabelled generated chart is indistinguishable from the market.
+  late final PriceBarRepository prices = isMock
+      ? MockPriceBarRepository()
+      : SupabasePriceBarRepository();
 
   /// Registers a broker account with MetaAPI. Mock mode fabricates the id so the connect flow is
   /// usable before a `METAAPI_TOKEN` exists.

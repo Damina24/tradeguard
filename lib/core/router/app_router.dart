@@ -6,6 +6,7 @@ import '../../features/auth/presentation/auth_screen.dart';
 import '../../features/guard/presentation/guard_screen.dart';
 import '../../features/journal/presentation/journal_screen.dart';
 import '../../features/patterns/presentation/pattern_insights_screen.dart';
+import '../../features/replay/presentation/replay_screen.dart';
 import '../../features/settings/presentation/settings_screen.dart';
 import '../../features/signals/presentation/signals_screen.dart';
 import '../../features/tools/presentation/tools_screen.dart';
@@ -81,6 +82,15 @@ final Provider<GoRouter> routerProvider = Provider<GoRouter>((Ref ref) {
               GoRoute(
                 path: '/tools',
                 builder: (_, __) => const ToolsScreen(),
+                // Replay lite (task 2.6). A child of Tools rather than a sixth bottom-nav tab, for
+                // the same reason /journal/patterns is a child of Journal: it is a deeper cut of an
+                // existing job, and a tab would steal width from the Guard home screen.
+                routes: <RouteBase>[
+                  GoRoute(
+                    path: 'replay',
+                    builder: (_, __) => const ReplayScreen(),
+                  ),
+                ],
               ),
             ],
           ),

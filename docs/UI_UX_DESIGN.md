@@ -72,6 +72,19 @@ Fields: login, server, (password never stored - relayed to MetaAPI). CTA Connect
 - Economic calendar list (impact dots).
 - Session clock: London / NY open countdown.
 
+### S-replay — Backtest replay lite (child of Tools, task 2.6)
+- Symbol chips + timeframe; provenance line (`Cached market data · N bars · updated 4m ago`, or a
+  `SYNTHETIC DEMO` chip for generated bars).
+- Price chart with the setup's entry / stop / target drawn as labelled lines.
+- Transport: reset, step back, play/pause, step forward, skip to end, plus a "bar N of M" counter.
+- Setup controls: direction, stop width in bar-ranges, target R (including "No target"). The derived
+  entry / stop / target are printed as a block of prices, never hidden behind the controls.
+- Verdict card: target hit / stop hit / still open / never filled / invalid — each in its own words,
+  with fill price, exit bar, bars held, MFE and MAE in R.
+- Scan card: every bar tested. Sample size and floor printed first; **no rate at all** below 10 trades.
+- Backtest disclaimer at the foot (hypothetical, fixed fill assumptions, no spread/slippage, past
+  performance is not indicative).
+
 ### S7 Signals
 - LIVE badge + last update.
 - SignalCard list.

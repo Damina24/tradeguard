@@ -31,6 +31,13 @@ verify_jwt = true
 [functions.ai-review]
 verify_jwt = true
 
+# market-bars is user-facing (a trader opens the replay), so it uses the `ai-review` shape: the platform
+# verifies the JWT and the function additionally resolves the caller with GoTrue. It must NOT use the
+# service-role gate that guard-check / sync-trades use — those are cron jobs with no user session.
+# TWELVEDATA_KEY is a metered credential and lives only in this function's environment, never in the app.
+[functions.market-bars]
+verify_jwt = true
+
 [functions.ai-analyze-chart]
 verify_jwt = true
 

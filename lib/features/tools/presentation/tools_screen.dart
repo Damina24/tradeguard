@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_text_styles.dart';
@@ -11,7 +12,18 @@ class ToolsScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Tools')),
+      appBar: AppBar(
+        title: const Text('Tools'),
+        // Entry point for task 2.6. The icon is paired with a tooltip so the destination is named
+        // for screen readers, not just drawn.
+        actions: <Widget>[
+          IconButton(
+            tooltip: 'Replay a setup bar by bar',
+            icon: const Icon(Icons.replay),
+            onPressed: () => context.push('/tools/replay'),
+          ),
+        ],
+      ),
       body: ListView(
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
         children: <Widget>[

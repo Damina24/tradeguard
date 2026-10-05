@@ -35,7 +35,7 @@ supabase link --project-ref <project-ref>
 supabase db push
 ```
 
-That applies `0001_init.sql` … `0005_sync_trades.sql`. The cron migrations need two Vault
+That applies `0001_init.sql` … `0008_prices_cache_rls.sql`. The cron migrations need two Vault
 secrets, so insert them **before** pushing them — or re-run them afterwards:
 
 ```sql
@@ -78,6 +78,7 @@ A minute later there should be one `equity_snapshots` row per active account.
 
 ```bash
 supabase secrets set METAAPI_TOKEN=<metaapi-token>
+supabase secrets set TWELVEDATA_KEY=<twelvedata-key>
 supabase secrets set SUPABASE_SERVICE_KEY=<service_role>
 supabase secrets set FIREBASE_SERVICE_ACCOUNT='{"type":"service_account","project_id":"…", …}'
 ```
@@ -86,7 +87,13 @@ supabase secrets set FIREBASE_SERVICE_ACCOUNT='{"type":"service_account","projec
 |---|---|---|
 | `SUPABASE_SERVICE_KEY` | both cron workers | functions 500s |
 | `METAAPI_TOKEN` | reading live equity + syncing trades | equity falls back to the last snapshot; no trade sync |
+| `TWELVEDATA_KEY` | the `market-bars` price cache | the replay falls back to cached bars, then to `SYNTHETIC DEMO` |
 | `FIREBASE_SERVICE_ACCOUNT` | the 70/90 push | numbers are stored, no notification |
+
+`TWELVEDATA_KEY` is **server-side only** and must never be added to `env/dev.json`: a
+`--dart-define` value ships inside the APK, where anyone who installs the app can extract it and spend
+our metered allowance from outside the product. See the task 2.6 notes in
+`docs/IMPLEMENTATION_PLAN.md`.
 
 `FIREBASE_SERVICE_ACCOUNT` is the **whole** service-account JSON (Firebase console → Project settings
 → Service accounts → Generate new private key). Quoting matters: an unquoted value containing spaces
@@ -124,6 +131,106 @@ runtime:
 ```bash
 node supabase/functions/sync-trades/sync-trades_test.ts
 # → sync-trades: 41 tests passed
+```
+
+---
+
+## 3a. The `market-bars` price cache (task 2.6)
+
+```bash
+supabase functions deploy market-bars
+```
+
+`market-bars` is **user-facing** (a trader opens the Replay screen), so it uses the `ai-review` gate —
+`verify_jwt = true` plus a GoTrue lookup of the caller's own bearer — *not* the service-role gate the
+two cron workers use. It needs `TWELVEDATA_KEY` and `SUPABASE_SERVICE_KEY`.
+
+```bash
+curl -X POST "https://<project-ref>.supabase.co/functions/v1/market-bars" \
+  -H "Authorization: Bearer <a user access token>" \
+  -H "apikey: <anon key>" \
+  -H "Content-Type: application/json" \
+  -d '{"symbol":"XAUUSD","interval":"1h"}'
+# → {"ok":true,"symbol":"XAUUSD","interval":"1h","bars":[…],"as_of":"…","cached":false}
+```
+
+Two behaviours worth checking explicitly, because both are deliberate:
+
+- **Run it twice.** The second call must report `"cached":true` and make **no** upstream request —
+  a fresh row is answered without touching the metered provider.
+- **An off-list symbol is `404` before any network call**, and costs nothing:
+
+```bash
+-d '{"symbol":"TSLA","interval":"1h"}'   # → 404 {"ok":false,"error":"Unknown symbol"}
+```
+
+```sql
+-- service-role / SQL Editor view of what exists
+select symbol, timeframe, jsonb_array_length(ohlc) from prices_cache order by 1, 2;
+```
+
+### 🧑 Gate: verify migration 0008 before replay is called live
+
+**This step is not optional. Task 2.6 is not "live" until all three checks below pass.**
+
+Before 0008, `prices_cache` had RLS enabled and *no policy*, so every client read returned an
+**empty set** rather than an error. That is the dangerous failure mode here: the replay renders
+"no bars cached for this symbol" and the trader concludes the backend is broken, instead of being
+told the read was denied. A check that only looks at row counts will not catch it.
+
+> ⚠️ **Run these through PostgREST, not the SQL Editor.** In the SQL Editor you are `postgres`,
+> which **bypasses RLS**: `select count(*)` would ignore the policy and the `insert` would
+> *succeed*. That is a false green. Supabase's REST layer is what the app actually uses, so that is
+> what must be tested. Set `USER_TOKEN` to a signed-in trader's access token (sign in through the
+> app, or `POST /auth/v1/token?grant_type=password` with a real account).
+
+**1. A signed-in trader can read cached bars** — expect a count **equal to** the row count from the
+query above. A `0` here means the policy is missing or wrong, even though the rows exist:
+
+```bash
+curl "https://<project-ref>.supabase.co/rest/v1/select=count" \
+  -H "apikey: <anon key>" -H "Authorization: Bearer <USER_TOKEN>" \
+  -H "Prefer: count=exact" -H "Range: 0-0"
+# ✅ → [{"count":"<N>"}]   N > 0 and N matches the service-role count
+# ❌ → [{"count":"0"}]     rows exist but the policy is not applied
+```
+
+**2. `anon` sees nothing** — expect zero, returned as data rather than as a 401/403. RLS filters
+silently, so an unauthenticated caller cannot enumerate the cache by primary key:
+
+```bash
+curl "https://<project-ref>.supabase.co/rest/v1/select=count" \
+  -H "apikey: <anon key>" -H "Prefer: count=exact" -H "Range: 0-0"
+# ✅ → [{"count":"0"}]
+```
+
+**3. No client may write the cache** — the cross-tenant poisoning route this migration closes.
+Expect an auth failure, **never** `201 Created`:
+
+```bash
+curl -i -X POST "https://<project-ref>.supabase.co/rest/v1/prices_cache" \
+  -H "apikey: <anon key>" -H "Authorization: Bearer <USER_TOKEN>" \
+  -H "Content-Type: application/json" \
+  -d '{"symbol":"XAUUSD","timeframe":"1h","ohlc":[]}'
+# ✅ → HTTP 401 or 403  ("new row violates row-level security policy" / permission denied)
+# ❌ → HTTP 201        DELETE IT: delete from prices_cache where symbol='XAUUSD' and timeframe='1h';
+```
+
+Finally, confirm the objects actually landed (safe to run as `postgres` — this only inspects the
+catalog, it does not exercise RLS):
+
+```sql
+select policyname, cmd, roles from pg_policies where tablename = 'prices_cache';
+-- ✅ → "read cached bars" | SELECT | {authenticated}
+select indexname from pg_indexes where tablename = 'prices_cache';
+-- ✅ → prices_cache_pkey, prices_cache_updated_idx
+```
+
+Its policy lives in `supabase/functions/market-bars/shared.ts` and is unit-tested without a runtime:
+
+```bash
+node supabase/functions/market-bars/market-bars_test.ts
+# → market-bars: 21 passed
 ```
 
 ---
@@ -196,3 +303,5 @@ screen reads the newest `equity_snapshots` row instead of seeded demo numbers.
 | Guard stays STALE in the app | No snapshot in the last 3 minutes → check step 2 before suspecting the app. |
 | Apple sign-in "could not be verified" | `aud` mismatch: Supabase's Apple config points at a different bundle/Service ID. |
 | Google sign-in works on iOS but not Android | `GOOGLE_SERVER_CLIENT_ID` missing, or the SHA-1 is not on the Android OAuth client. |
+| Replay says "no bars cached" but the row exists in `prices_cache` | Migration 0008 is not applied. RLS with no policy returns an **empty set, not an error** — so this looks like missing data rather than a denied read. Run the 3a gate; if check 1 returns `0`, the `read cached bars` policy is missing. |
+| `prices_cache` insert from the SQL Editor succeeds | Expected — you are `postgres`, which bypasses RLS. It proves nothing either way; test writes via PostgREST with a user JWT (3a gate, check 3). |

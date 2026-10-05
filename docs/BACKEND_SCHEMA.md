@@ -99,6 +99,36 @@ create table ai_reviews (
 );
 
 create table prices_cache (
+  symbol text not null, timeframe text not null,
+  ohlc jsonb not null, updated_at timestamptz not null default now(),
+  primary key (symbol, timeframe)
+);
+```
+
+### `prices_cache` — the backtest bar cache (task 2.6)
+
+| Column | Type | Contract |
+|---|---|---|
+| `symbol` | text | Upper-case canonical form from a fixed allowlist (`XAUUSD`, `EURUSD`, `GBPUSD`, `USDJPY`, `US30`) |
+| `timeframe` | text | One of `15min`, `1h`, `4h`, `1day` — TwelveData's own wire values |
+| `ohlc` | jsonb | Array of `{t, o, h, l, c}`, **oldest first**; `t` is an ISO-8601 UTC instant |
+| `updated_at` | timestamptz | When `market-bars` wrote the row; the client's staleness check reads it |
+
+Three properties that are deliberate rather than incidental:
+
+- **Deliberately NOT scoped per user.** OHLC candles are public market facts; there is no per-user
+  data in a row and no `user_id` column. Scoping the cache per user would multiply metered TwelveData
+  fetches by the size of the user base while storing identical data — and would imply to a later
+  editor that these rows are private.
+- **Writes are service-role only.** Migration 0008 opens a SELECT policy for `authenticated` and
+  revokes INSERT/UPDATE/DELETE from `anon` and `authenticated`. Without the revoke, any user could
+  POST bars into the shared cache and every other trader's replay would chart invented prices — a
+  cross-tenant poisoning route that produces a *backtest result*, which is precisely the kind of
+  number a trader might act on.
+- **`market-bars` normalises to UTC.** TwelveData's timestamps carry no zone, and `new Date(...)` reads
+  a naive timestamp as LOCAL time. Since the normalised bars land in one shared row, two users in
+  different timezones would otherwise replay different series for the same symbol. Naive timestamps are
+  pinned to UTC so the cache holds one canonical answer.
 
 ## 3. Indexes
 
@@ -193,6 +223,7 @@ roadmap's "setup leaks"; it needs a view revision first, not a client-side roll-
 | `guard-check` | cron 1/min (pg_cron, migration 0004) | snapshot equity, compute guard, push 70/90, prune >30d |
 | `sync-trades` | cron 5/min (pg_cron, migration 0005) | pull deals → upsert trades on `(account_id, external_id)`, advance `trade_sync_cursors` |
 | `ai-review` | HTTP (auth) | OpenAI trade review JSON |
+| `market-bars` | HTTP (auth) | TwelveData OHLC → normalise → upsert `prices_cache` (task 2.6) |
 | `ai-analyze-chart` | HTTP (auth) | OpenAI vision → plan JSON |
 | `copy-signal` | HTTP (auth) | lots calc → MetaAPI order (paper/live) |
 | `purge-account` | HTTP (auth) | delete user data for Account Deletion |
@@ -216,6 +247,7 @@ GET  /functions/v1/guard-status?account_id= -> {daily_used_pct, daily_left, dd_d
                                                 target_left_pct, equity, state, as_of}
 POST /functions/v1/sync-trades        {account_id} -> {imported, updated}
 POST /functions/v1/ai-review          {trade_id} -> {summary, leak, score, suggestions[]}
+POST /functions/v1/market-bars          {symbol, interval} -> {symbol, interval, bars[], as_of}
 POST /functions/v1/ai-analyze-chart   {image_url} -> {bias, levels[], entry, sl, tp[]}
 POST /functions/v1/copy-signal        {signal_id, account_ids[], risk_pct, mode} -> {results[]}
 ```
@@ -227,8 +259,7 @@ Every contract has a matching mock in `lib/core/services/mock_*`.
 `purge-account` deletes trades, snapshots, follows, reviews, storage screenshots and broker
 tokens; anonymizes profile (email hashed) for purchase/tax records. SLA 30 days.
 
-  symbol text not null, timeframe text not null,
-  ohlc jsonb not null, updated_at timestamptz not null default now(),
-  primary key (symbol, timeframe)
-);
-```
+`prices_cache` is **not** per-user data and is deliberately not purged with an account: it holds
+public OHLC candles keyed by symbol, holds nothing about the trader who fetched it, and is shared by
+every user. Deleting it on account closure would discard a cache another trader's replay is reading.
+The cache is pruned by age (rows nothing has requested for days), not by owner.

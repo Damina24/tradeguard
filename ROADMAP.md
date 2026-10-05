@@ -54,7 +54,20 @@ Exit: trader can watch live guard numbers and receive a breach alert.
       labels itself `OFFLINE DEMO`. Migration 0007 narrows `ai_reviews` to SELECT (a client could
       otherwise forge its own reviews) and adds the `(user_id, trade_id)` idempotency key —
       🧑 apply + verify live
-- Backtest replay lite (bar-by-bar, TwelveData cache)
+- ✅ Backtest replay lite: a bar-by-bar engine over cached OHLC bars. The trader picks a direction, a
+      stop width in bar-ranges and a target R; the replay fills at the first bar that trades through
+      the entry and follows it bar by bar (play / step / jump) until the stop or the target. Every fill
+      and exit rule is pessimistic — a bar spanning both the stop and the target is a loss, the entry
+      bar cannot also be the exit bar, and an unresolved position is labelled rather than closed at a
+      convenient price. A whole-series `ReplayScan` re-anchors the same setup on every bar and refuses
+      to print a rate below 10 trades. TwelveData is fetched **server-side only** by `market-bars`
+      (`TWELVEDATA_KEY` never ships in the APK; the key stays in `supabase secrets` and the field in
+      `AppConfig` is a documented placeholder that must remain empty); migration 0008 opens
+      `prices_cache` for authenticated reads and revokes every client write, closing a cross-tenant
+      route where one user could have posted bars that another trader's backtest charted — 0008
+      approved but **not yet verified**: blocked on the 3a gate in `docs/BACKEND_DEPLOY.md`, which
+      must be run through PostgREST with a user JWT (the SQL Editor bypasses RLS and gives a false
+      green)
 
 Exit: D7 guard-open > 40%, journal import success > 90%.
 
