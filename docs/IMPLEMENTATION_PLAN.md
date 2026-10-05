@@ -86,6 +86,33 @@ bring-up, including the Vault secrets the cron job needs, is `docs/BACKEND_DEPLO
 14. **The share card carries no account number, broker login or trade id.** It shows the account
     *nickname* only. Nothing on `Trade` is a credential, and the domain layer never sees one, so
     a screenshot of the card is safe to post.
+15. **Task 2.4 consumes `v_patterns` and never reimplements it.** The view already computes
+    `sum(pnl)`, `count(*)` and a win-rate mean per `(symbol, session, dow, hour)`.
+    `PatternMetrics` only *recombines* those aggregates — summing sums and weighting the average
+    by each row's own count — which is arithmetically identical to the `GROUP BY` Postgres would
+    have produced for the coarser axis. A second client-side roll-up of the same statistic would
+    be a second source of truth that could disagree with the database.
+16. **Three things `v_patterns` does not project are therefore not shown: R multiple, costs and
+    grade.** They live on `trades.r_multiple`, `trades.commission/swap` and `trades.grade`, none
+    of which the view aggregates. Rather than invent a client-side version of each, the pattern
+    layer leaves them with `TradeMetrics`/`TradeReview` (task 2.3), which already own them. The
+    roadmap's "setup leaks" is the same story: `trades.setup` exists but the view does not group
+    by it, so setup is deliberately not a pattern dimension yet.
+17. **A leak is a recurring slice, never a losing trade.** `LeakDetector` reports only slices
+    holding at least `minTrades` (5) trades, and a `LeakConfidence` label (small / moderate /
+    large) is rendered next to every finding so a thin sample is visibly weaker than a solid one.
+    The shipped mock seed deliberately includes a losing 4-trade `US30` slice precisely so this
+    guard is exercised rather than assumed.
+18. **Leak loss shares are computed per dimension, not globally.** The four dimensions are
+    *overlapping* views of the same trades — every row appears in all four — so summing losses
+    across them counts each loss four times and would make the concentration rule unreachable
+    instead of merely strict. Within one dimension the slices are disjoint, so shares compare.
+19. **Migration 0006 fixes a latent cross-account leak in both views.** Postgres does not apply a
+    base table's RLS policies to a view by default: a plain `create view` runs with its owner's
+    privileges, so `select * from v_patterns` returned *every* user's pattern history to anyone
+    who could query it. Nothing read the views until task 2.4. `security_invoker = true` makes
+    `trades`' `own trades` policy apply per row. This has **not** been executed against a live
+    project — see the migration's own verification note.
 
 5. **Social sign-in verifies on the server, not the client.** `sign_in_with_apple` /
    `google_sign_in` only produce an ID token; `SupabaseAuthRepository` exchanges it via
@@ -106,7 +133,7 @@ bring-up, including the Vault secrets the cron job needs, is `docs/BACKEND_DEPLO
 | 2.1 | CSV/HTML import + dupe handling | ✅ (`TradeRecord`, `TradeFileParser` + registry, mock-first `TradeImportRepository`) |
 | 2.2 | sync-trades worker | ✅ idempotent + incremental (`trade_sync_cursors`, `(account_id, external_id)` upsert, cron 5/min) |
 | 2.3 | Trade detail + grading + screenshots | ✅ detail, deterministic A–D checklist grade, share card (screenshot upload still ⬜) |
-| 2.4 | Pattern views + leaks UI | ⬜ |
+| 2.4 | Pattern views + leaks UI | ✅ `PatternRow`/`PatternMetrics` over `v_patterns`, mock-first, conservative leak detector; migration 0006 makes the views RLS-respecting 🧑 (not yet applied live) |
 | 2.5 | ai-review card | ⬜ |
 | 2.6 | Replay lite | ⬜ |
 

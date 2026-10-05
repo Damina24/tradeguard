@@ -1,4 +1,7 @@
 import '../constants/app_config.dart';
+import '../../features/patterns/data/mock_pattern_repository.dart';
+import '../../features/patterns/data/pattern_repository.dart';
+import '../../features/patterns/data/supabase_pattern_repository.dart';
 import 'account_repository.dart';
 import 'auth_repository.dart';
 import 'broker_connect_service.dart';
@@ -33,6 +36,13 @@ class Services {
   late final TradeRepository trades = isMock
       ? MockTradeRepository()
       : SupabaseTradeRepository();
+
+  /// `v_patterns` rows for the signed-in trader. Mock mode returns the same
+  /// pre-grouped fixture shape the live view returns, so the pattern views and
+  /// the leaks screen are fully exercisable with no backend and no credentials.
+  late final PatternRepository patterns = isMock
+      ? MockPatternRepository()
+      : SupabasePatternRepository();
 
   /// Registers a broker account with MetaAPI. Mock mode fabricates the id so the connect flow is
   /// usable before a `METAAPI_TOKEN` exists.

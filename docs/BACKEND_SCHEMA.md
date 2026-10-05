@@ -160,6 +160,31 @@ select user_id, symbol, session,
 from trades group by 1,2,3,4,5;
 ```
 
+Migration **0006** recreates both views with `with (security_invoker = true)` and restricts
+`select` to `authenticated` (`anon` revoked). Without it a view runs with its owner's
+privileges, bypassing the `own trades` policy on `trades` — which would expose every user's
+pattern history. Read by task 2.4; see the migration for the live-verification note.
+
+### `v_patterns` is the whole contract for task 2.4
+
+`v_patterns` projects exactly eight columns, and the pattern views consume all eight:
+
+| Column | Type | Used for |
+|---|---|---|
+| `user_id` | uuid | repository-scoped read only — never a query parameter |
+| `symbol` | text | `PatternDimension.symbol` |
+| `session` | text (nullable) | `PatternDimension.session`; null groups as "Untagged" |
+| `dow` | numeric | `PatternDimension.dayOfWeek` (0 = Sunday) |
+| `hour` | numeric | `PatternDimension.hour` |
+| `pnl` | numeric | net result of the group (`sum`), already cost-inclusive |
+| `n` | bigint | sample size of the group (`count`) |
+| `win_rate` | numeric | mean 0/1 flag, a 0…1 **fraction** |
+
+**Not projected, and therefore deliberately not shown by the pattern views:** `r_multiple`,
+`commission`, `swap`, `grade`, `setup`, `direction`. Those stay with `TradeMetrics` /
+`TradeReview` (2.3). Adding `setup` to the group-by is the change that would unlock the
+roadmap's "setup leaks"; it needs a view revision first, not a client-side roll-up.
+
 ## 6. Edge Functions
 
 | Function | Trigger | Purpose |

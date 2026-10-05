@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../../core/models/trade.dart';
 import '../../../core/services/providers.dart';
@@ -20,7 +21,18 @@ class JournalScreen extends ConsumerWidget {
     final JournalStats stats = ref.watch(journalStatsProvider);
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Journal')),
+      appBar: AppBar(
+        title: const Text('Journal'),
+        // Entry point for task 2.4. The icon is paired with a tooltip so the
+        // destination is named for screen readers, not just drawn.
+        actions: <Widget>[
+          IconButton(
+            tooltip: 'Patterns and leaks',
+            icon: const Icon(Icons.insights),
+            onPressed: () => context.push('/journal/patterns'),
+          ),
+        ],
+      ),
       body: ListView(
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
         children: <Widget>[

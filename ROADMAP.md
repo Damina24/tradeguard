@@ -40,9 +40,11 @@ Exit: trader can watch live guard numbers and receive a breach alert.
 
 ## Phase 2 — Journal + AI (Week 4–6) ⬜
 
-- CSV / HTML import (MT5, MT4, cTrader) + auto-sync worker
-- Trade detail, grading A–D, notes, screenshot upload (Supabase Storage)
-- Pattern tracker SQL views (best hour / day / setup / session leaks)
+- ✅ CSV / HTML import (MT5, MT4, cTrader) + auto-sync worker
+- ✅ Trade detail, grading A–D, notes (screenshot upload to Storage still ⬜ — tracked gap from S5)
+- ✅ Pattern tracker: `v_patterns` consumed as-is (symbol / session / hour / day), conservative
+      leak detector (net-negative slice + loss concentration, min 5 trades, confidence labelled).
+      Migration 0006 makes the analytics views RLS-respecting — 🧑 apply + verify live
 - `ai-review` Edge Function + AI Review card
 - Backtest replay lite (bar-by-bar, TwelveData cache)
 

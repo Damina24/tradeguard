@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../features/auth/presentation/auth_screen.dart';
 import '../../features/guard/presentation/guard_screen.dart';
 import '../../features/journal/presentation/journal_screen.dart';
+import '../../features/patterns/presentation/pattern_insights_screen.dart';
 import '../../features/settings/presentation/settings_screen.dart';
 import '../../features/signals/presentation/signals_screen.dart';
 import '../../features/tools/presentation/tools_screen.dart';
@@ -63,6 +64,15 @@ final Provider<GoRouter> routerProvider = Provider<GoRouter>((Ref ref) {
               GoRoute(
                 path: '/journal',
                 builder: (_, __) => const JournalScreen(),
+                routes: <RouteBase>[
+                  // Patterns + leaks (task 2.4). A child of /journal rather than a
+                  // sixth tab: it is a deeper cut of the journal, and a tab would
+                  // steal space from the guard home screen.
+                  GoRoute(
+                    path: 'patterns',
+                    builder: (_, __) => const PatternInsightsScreen(),
+                  ),
+                ],
               ),
             ],
           ),
