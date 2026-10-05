@@ -1,4 +1,7 @@
 import '../constants/app_config.dart';
+import '../../features/ai_review/data/ai_review_repository.dart';
+import '../../features/ai_review/data/mock_ai_review_repository.dart';
+import '../../features/ai_review/data/supabase_ai_review_repository.dart';
 import '../../features/patterns/data/mock_pattern_repository.dart';
 import '../../features/patterns/data/pattern_repository.dart';
 import '../../features/patterns/data/supabase_pattern_repository.dart';
@@ -43,6 +46,12 @@ class Services {
   late final PatternRepository patterns = isMock
       ? MockPatternRepository()
       : SupabasePatternRepository();
+
+  /// Mock mode produces reviews offline from the deterministic checklist, so the AI Review card is
+  /// fully exercisable with no `OPENAI_API_KEY`.
+  late final AiReviewRepository aiReviews = isMock
+      ? MockAiReviewRepository()
+      : SupabaseAiReviewRepository();
 
   /// Registers a broker account with MetaAPI. Mock mode fabricates the id so the connect flow is
   /// usable before a `METAAPI_TOKEN` exists.

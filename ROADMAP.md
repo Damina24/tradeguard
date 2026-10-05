@@ -45,7 +45,15 @@ Exit: trader can watch live guard numbers and receive a breach alert.
 - ✅ Pattern tracker: `v_patterns` consumed as-is (symbol / session / hour / day), conservative
       leak detector (net-negative slice + loss concentration, min 5 trades, confidence labelled).
       Migration 0006 makes the analytics views RLS-respecting — 🧑 apply + verify live
-- `ai-review` Edge Function + AI Review card
+- ✅ `ai-review` Edge Function + AI Review card: `{trade_id} -> {summary, leak, score, suggestions[]}`.
+      Trade fields reach the model through an **allowlist** projection (no ids, no notes, no
+      screenshot path), the prompt is versioned in source, and the response is clamped/capped
+      before it is stored or rendered. `AiReviewCard` sits on S5 below the deterministic checklist
+      and grade, so the trader reads a verdict they can check for themselves first. A failed
+      refresh keeps the previous review visible and is never shown as "no review yet"; mock mode
+      labels itself `OFFLINE DEMO`. Migration 0007 narrows `ai_reviews` to SELECT (a client could
+      otherwise forge its own reviews) and adds the `(user_id, trade_id)` idempotency key —
+      🧑 apply + verify live
 - Backtest replay lite (bar-by-bar, TwelveData cache)
 
 Exit: D7 guard-open > 40%, journal import success > 90%.

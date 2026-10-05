@@ -7,6 +7,7 @@ import '../../../core/services/providers.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_text_styles.dart';
 import '../../../core/utils/formatters.dart';
+import '../../ai_review/widgets/ai_review_card.dart';
 import '../domain/trade_grade.dart';
 import '../domain/trade_metrics.dart';
 import '../domain/trade_review.dart';
@@ -62,6 +63,14 @@ class TradeDetailScreen extends ConsumerWidget {
           const Text('GRADE', style: AppTextStyles.label),
           const SizedBox(height: 8),
           _GradeSelector(trade: trade, derived: review.grade),
+          const SizedBox(height: 20),
+          // Task 2.5 — the AI Review card, placed after the deterministic checklist and grade so
+          // the trader reads our own verdict first and the model's opinion second. Presenting the
+          // model's view before the reproducible one would let it override a grade the trader can
+          // check for themselves.
+          const Text('AI REVIEW', style: AppTextStyles.label),
+          const SizedBox(height: 8),
+          AiReviewCard(tradeId: tradeId),
           const SizedBox(height: 20),
           const Text('SHARE', style: AppTextStyles.label),
           const SizedBox(height: 8),

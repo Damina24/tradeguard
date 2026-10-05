@@ -125,6 +125,31 @@ bring-up, including the Vault secrets the cron job needs, is `docs/BACKEND_DEPLO
 7. **`guard-check` authenticates its own caller.** `verify_jwt = false` means the platform checked
    nothing, which would let anyone with the URL make us spend MetaAPI allowance on demand. It now
    requires the service-role bearer that pg_cron presents.
+8. **Task 2.5 removes the ability to forge an AI review, and takes the client out of the write
+   path.** Migration 0002's `ai_reviews` policy was `for all`, which included INSERT and UPDATE.
+   Harmless while nothing wrote to the table; the moment the AI Review card shipped, it meant any
+   user could insert a review with `auth.uid() = user_id` and any text, and the card would render
+   that fabrication as though a model had written it. Migration 0007 narrows it to SELECT, so the
+   only writer is the Edge Function — and that function writes with the service role, which is why
+   it re-derives the caller from the verified JWT and filters the `trades` read on
+   `trades.user_id = <caller>`. `user_id` is never read from the request body, so there is no IDOR
+   to attempt. This migration has **not** been applied to a live project.
+9. **The prompt is built from an allowlist, and that is the privacy control.** `projectTradeFacts`
+   copies only execution fields off our own `trades` row. `user_id`, `account_id`, `nickname`,
+   `metaapi_account_id`, `notes` and `screenshot_url` cannot reach the model because they are never
+   read — the free-text notes are excluded precisely because that is where a trader is most likely
+   to have written an account number. `FORBIDDEN_PROMPT_FIELDS` is a tripwire for the next editor,
+   not the enforcement.
+10. **A failure is a banner, never a replacement.** If a refresh fails while a review is already on
+    screen, the card shows the error AND keeps the review. Discarding a trader's stored feedback
+    because a network call failed would be worse than the failure. And a failure is never rendered
+    as "no review yet" — that would let a backend misconfiguration hide behind an inviting button.
+11. **The offline mock says so on the card.** Mock mode produces reviews from the deterministic
+    checklist (`TradeReview`), so mock and the A–D grade can never disagree — but a demo review
+    unlabelled is indistinguishable from model output. `isStubbed` renders an `OFFLINE DEMO` chip.
+12. **The score band lives in `core/models`, not in the widget.** The thresholds are a claim about
+    the score; a claim that lives in a widget is a claim a test cannot check. `AiReviewBand` sits
+    beside `AiReview` so `core` never has to import from `features`.
 
 ## Phase 2 — Journal + AI
 
@@ -134,7 +159,7 @@ bring-up, including the Vault secrets the cron job needs, is `docs/BACKEND_DEPLO
 | 2.2 | sync-trades worker | ✅ idempotent + incremental (`trade_sync_cursors`, `(account_id, external_id)` upsert, cron 5/min) |
 | 2.3 | Trade detail + grading + screenshots | ✅ detail, deterministic A–D checklist grade, share card (screenshot upload still ⬜) |
 | 2.4 | Pattern views + leaks UI | ✅ `PatternRow`/`PatternMetrics` over `v_patterns`, mock-first, conservative leak detector; migration 0006 makes the views RLS-respecting 🧑 (not yet applied live) |
-| 2.5 | ai-review card | ⬜ |
+| 2.5 | ai-review card | ✅ `ai-review` Edge Function (allowlist projection, prompt versioned in source) + `AiReviewCard` on S5, mock-first; migration 0007 makes `ai_reviews` SELECT-only and idempotent 🧑 (not yet applied live) |
 | 2.6 | Replay lite | ⬜ |
 
 ## Phase 3 — Signals + Copy
