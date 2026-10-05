@@ -72,6 +72,20 @@ bring-up, including the Vault secrets the cron job needs, is `docs/BACKEND_DEPLO
     outage would be skipped permanently. Failures bump `consecutive_failures`, which drives an
     exponential backoff capped at an hour so a dead account stops consuming the shared MetaAPI
     allowance on every five-minute tick.
+12. **Grading reuses the product's own A–D vocabulary and nothing more.** The spec defines the
+    four letters (`grade text -- A|B|C|D`) and a "rule checklist compliance bar", but no
+    thresholds, so `TradeReview` is a transparent checklist whose every input is visible in its
+    reasons — not a proprietary score. A hand-set `trades.grade` always beats the derived one.
+    An A additionally requires the >= 1R target, because a 0.05R scalp that merely kept its
+    stop and target would otherwise score a perfect checklist and grade A.
+13. **The detail screen shows the persisted `pnl`, never a recomputed one.** Task 2.1 writes it
+    as `profit + commission + swap` and Task 2.2's sync writes the same, so recomputing it in the
+    client would risk the app and the database disagreeing about a trader's equity. `Trade.pnl`
+    is read verbatim; `commission`/`swap` are read from the columns that already existed to
+    explain it.
+14. **The share card carries no account number, broker login or trade id.** It shows the account
+    *nickname* only. Nothing on `Trade` is a credential, and the domain layer never sees one, so
+    a screenshot of the card is safe to post.
 
 5. **Social sign-in verifies on the server, not the client.** `sign_in_with_apple` /
    `google_sign_in` only produce an ID token; `SupabaseAuthRepository` exchanges it via
@@ -91,7 +105,7 @@ bring-up, including the Vault secrets the cron job needs, is `docs/BACKEND_DEPLO
 |---|---|---|
 | 2.1 | CSV/HTML import + dupe handling | ✅ (`TradeRecord`, `TradeFileParser` + registry, mock-first `TradeImportRepository`) |
 | 2.2 | sync-trades worker | ✅ idempotent + incremental (`trade_sync_cursors`, `(account_id, external_id)` upsert, cron 5/min) |
-| 2.3 | Trade detail + grading + screenshots | ⬜ |
+| 2.3 | Trade detail + grading + screenshots | ✅ detail, deterministic A–D checklist grade, share card (screenshot upload still ⬜) |
 | 2.4 | Pattern views + leaks UI | ⬜ |
 | 2.5 | ai-review card | ⬜ |
 | 2.6 | Replay lite | ⬜ |

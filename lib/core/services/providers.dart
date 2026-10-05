@@ -6,6 +6,9 @@ import '../models/account.dart';
 import '../models/guard_status.dart';
 import '../models/signal.dart';
 import '../models/trade.dart';
+import '../../features/journal/domain/trade_grade.dart';
+import '../../features/journal/domain/trade_metrics.dart';
+import '../../features/journal/domain/trade_review.dart';
 import 'account_repository.dart';
 import 'broker_connect_service.dart';
 import 'guard_alert_monitor.dart';
@@ -196,6 +199,14 @@ class TradesNotifier extends StateNotifier<List<Trade>> {
   Object? _error;
   Object? get error => _error;
 
+  /// True once the repository has answered at least once, successfully or not.
+  ///
+  /// [state] starts as an empty list, which on its own is ambiguous between "still loading" and
+  /// "you have no trades". Without this the Journal would flash a misleading empty state on
+  /// every cold start, which is exactly the moment a trader is least likely to trust it.
+  bool _loaded = false;
+  bool get loaded => _loaded;
+
   List<Trade> forAccount(String? accountId) => accountId == null
       ? state
       : state.where((Trade t) => t.accountId == accountId).toList();
@@ -205,8 +216,15 @@ class TradesNotifier extends StateNotifier<List<Trade>> {
       final List<Trade> rows = await _repo.fetchTrades();
       _error = null;
       state = rows;
+      _loaded = true;
     } catch (e) {
       _error = e;
+      // `loaded` and `error` are plain fields, not part of `state`, so nothing would rebuild a
+      // screen that is still showing "loading". Writing a fresh list gives the notifier a new
+      // identity to publish, which is what actually wakes the listener — without this, a FIRST
+      // load that fails leaves the Journal spinning forever.
+      if (mounted) state = List<Trade>.unmodifiable(state);
+      _loaded = true;
     }
   }
 
@@ -221,12 +239,55 @@ class TradesNotifier extends StateNotifier<List<Trade>> {
     await _repo.updateNotes(tradeId, notes);
     await refresh();
   }
+
+  /// The trade with [tradeId], or null.
+  ///
+  /// Resolution always goes through this repository-scoped list, never through an id supplied
+  /// straight to a query: the repository is where RLS scopes rows to the signed-in user, so a
+  /// trade belonging to another account simply is not in [state].
+  Trade? byId(String tradeId) {
+    for (final Trade t in state) {
+      if (t.id == tradeId) return t;
+    }
+    return null;
+  }
 }
 
 /// ---- Signals ----
 
 final Provider<List<Signal>> signalsProvider =
     Provider<List<Signal>>((Ref ref) => MockData.signals());
+
+/// ---- Trade review (task 2.3) ----
+
+/// Deterministic metrics for one trade.
+///
+/// Returns null when the trade is not in [tradesProvider], so a screen can distinguish "not
+/// found / not yours" from "found".
+final ProviderFamily<TradeMetrics?, String> tradeMetricsProvider =
+    Provider.family<TradeMetrics?, String>((Ref ref, String tradeId) {
+  final Trade? trade = ref.watch(tradesProvider.notifier).byId(tradeId);
+  if (trade == null) return null;
+  return TradeMetrics.of(trade);
+});
+
+/// The grade + reasons for one trade.
+///
+/// A hand-set `trades.grade` wins over the derived one: the trader is the authority on their own
+/// execution, and the spec has always let them pick A–D by hand.
+final ProviderFamily<TradeReview?, String> tradeReviewProvider =
+    Provider.family<TradeReview?, String>((Ref ref, String tradeId) {
+  final TradeMetrics? metrics = ref.watch(tradeMetricsProvider(tradeId));
+  if (metrics == null) return null;
+  final TradeReview derived = TradeReview.of(metrics);
+  final TradeGrade? manual = TradeGrade.tryParse(metrics.trade.grade);
+  if (manual == null) return derived;
+  return TradeReview(
+    metrics: derived.metrics,
+    grade: manual,
+    reasons: derived.reasons,
+  );
+});
 
 /// ---- Journal stats ----
 
