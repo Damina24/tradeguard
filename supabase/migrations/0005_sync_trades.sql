@@ -29,8 +29,19 @@ create extension if not exists pg_net with schema extensions;
 -- (`InMemoryTradeImportRepository`, `TradeRecord.externalId` + the account id), so this change
 -- makes the database agree with the code instead of the other way round.
 --
--- Idempotent: safe to re-apply. Dropping the index removes the constraint that owns it.
-drop index if exists trades_user_id_external_id_key;
+-- Idempotent: safe to re-apply.
+--
+-- This MUST be `alter table ... drop constraint`, not `drop index`. Migration 0001 declared the
+-- key inline (`unique (user_id, external_id)`), so what exists is a TABLE CONSTRAINT
+-- `trades_user_id_external_id_key` that happens to have a backing index of the same name. Postgres
+-- refuses to drop that index out from under its owning constraint:
+--
+--     ERROR: cannot drop index trades_user_id_external_id_key because constraint
+--            trades_user_id_external_id_key on table trades requires it  (SQLSTATE 2BP01)
+--
+-- Dropping the constraint removes the index with it. `if exists` keeps this safe to re-apply, and
+-- safe to run against a database where the constraint was never present.
+alter table trades drop constraint if exists trades_user_id_external_id_key;
 
 -- Refuse to proceed if real duplicates already exist, rather than failing later with an opaque
 -- unique-violation. Duplicates can only pre-date this migration, and only when the trader had a

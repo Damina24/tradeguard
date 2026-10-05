@@ -42,6 +42,11 @@ android/key.properties
 *.jks
 *.keystore
 
+# Supabase CLI link metadata. Written by `supabase link`; holds the project ref, the
+# pooler connection URL and the linked project/org ids. No API keys, but it is
+# machine- and project-specific and must never be committed.
+supabase/.temp/
+
 # OS
 .DS_Store
 Thumbs.db
