@@ -68,10 +68,65 @@ export function normaliseSymbol(value: unknown): string | null {
   return isAllowedSymbol(value) ? (value as string).trim().toUpperCase() : null;
 }
 
+/**
+ * Maps our canonical cache symbol to the TwelveData wire symbol.
+ *
+ * TwelveData requires a slash for forex/metals (docs example: `EUR/USD`),
+ * so `EURUSD` -> `EUR/USD`, `XAUUSD` -> `XAU/USD`, etc. Cache key stays
+ * canonical; only the provider request uses the mapped form.
+ */
+export function providerSymbol(symbol: string): string {
+  const map: Record<string, string> = {
+    'XAUUSD': 'XAU/USD',
+    'EURUSD': 'EUR/USD',
+    'GBPUSD': 'GBP/USD',
+    'USDJPY': 'USD/JPY',
+    'US30': 'DJI',
+  };
+  return map[symbol] ?? symbol;
+}
+
 /** True when the interval is one this deployment will fetch. */
 export function isAllowedInterval(value: unknown): boolean {
-  if (typeof value !== 'string') return false;
-  return (ALLOWED_INTERVALS as readonly string[]).includes(value.trim());
+  return normaliseInterval(value) !== null;
+}
+
+/**
+ * Normalises a timeframe/interval to its canonical TwelveData wire value,
+ * or null when it is not allowed.
+ *
+ * Accepts both `interval` and `timeframe` key names (callers mix them),
+ * trims whitespace, is case-insensitive, and maps common aliases
+ * (`1H`, `1hour`, `60min`, `H1`, `1D`, `daily`, …) to the canonical set.
+ * This is the exact fix for `{"symbol":"EURUSD","interval":"1h"}`
+ * returning 404 `Unknown interval` when sent as `1H` / `timeframe`.
+ */
+export function normaliseInterval(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const v = value.trim().toLowerCase();
+  const aliases: Record<string, string> = {
+    '15min': '15min',
+    '15m': '15min',
+    '1h': '1h',
+    '60min': '1h',
+    '60m': '1h',
+    'h1': '1h',
+    '1hour': '1h',
+    '1hr': '1h',
+    '4h': '4h',
+    'h4': '4h',
+    '240min': '4h',
+    '240m': '4h',
+    '4hour': '4h',
+    '1day': '1day',
+    '1d': '1day',
+    'd1': '1day',
+    'daily': '1day',
+  };
+  const canonical = aliases[v] ?? v;
+  return (ALLOWED_INTERVALS as readonly string[]).includes(canonical)
+    ? canonical
+    : null;
 }
 
 /**

@@ -44,10 +44,11 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import {
   BARS_PER_REQUEST,
   classifyStatus,
-  isAllowedInterval,
   isStale,
   normaliseBars,
+  normaliseInterval,
   normaliseSymbol,
+  providerSymbol,
 } from './shared.ts';
 import type { CachedBar, ProviderFailure } from './shared.ts';
 
@@ -66,9 +67,9 @@ function json(payload: unknown, status = 200): Response {
 }
 
 function serviceClient() {
-  const key = Deno.env.get('SUPABASE_SERVICE_KEY');
+  const key = Deno.env.get('SERVICE_ROLE_KEY');
   const url = Deno.env.get('SUPABASE_URL');
-  if (!key || !url) throw new Error('SUPABASE_SERVICE_KEY / SUPABASE_URL is not set');
+  if (!key || !url) throw new Error('SERVICE_ROLE_KEY / SUPABASE_URL is not set');
   return createClient(url, key, {
     auth: { persistSession: false, autoRefreshToken: false },
   });
@@ -113,8 +114,11 @@ async function fetchBars(
   const key = Deno.env.get('TWELVEDATA_KEY');
   if (!key) return { failure: 'notConfigured' };
 
+  // TwelveData needs `EUR/USD` (slash) while our cache key stays `EURUSD` —
+  // see providerSymbol(). Passing the canonical form verbatim is the 404.
+  const wireSymbol = providerSymbol(symbol);
   const url =
-    `${TWELVEDATA_BASE}?symbol=${encodeURIComponent(symbol)}` +
+    `${TWELVEDATA_BASE}?symbol=${encodeURIComponent(wireSymbol)}` +
     `&interval=${encodeURIComponent(interval)}` +
     `&outputsize=${BARS_PER_REQUEST}&order=asc&apikey=${encodeURIComponent(key)}`;
 
@@ -188,10 +192,13 @@ Deno.serve(async (req: Request): Promise<Response> => {
   // cannot be used to probe what this deployment has fetched.
   const symbol = normaliseSymbol(record.symbol);
   if (symbol === null) return json({ ok: false, error: 'Unknown symbol' }, 404);
-  if (!isAllowedInterval(record.interval)) {
+  // Accept both `interval` (documented contract) and `timeframe` (DB column name
+  // callers sometimes send), then normalise case/aliases: '1H','1hour' -> '1h'.
+  const rawInterval = record.interval ?? record.timeframe;
+  const interval = normaliseInterval(rawInterval);
+  if (interval === null) {
     return json({ ok: false, error: 'Unknown interval' }, 404);
   }
-  const interval = (record.interval as string).trim();
 
   // deno-lint-ignore no-explicit-any
   let sb: any;

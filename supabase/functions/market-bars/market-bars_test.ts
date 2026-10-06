@@ -21,7 +21,9 @@ import {
   isStale,
   MAX_BARS_PER_SERIES,
   normaliseBars,
+  normaliseInterval,
   normaliseSymbol,
+  providerSymbol,
 } from './shared.ts';
 
 let passed = 0;
@@ -84,6 +86,24 @@ test('the intervals are a closed set', () => {
   ok(!isAllowedInterval('1week'));
   ok(!isAllowedInterval(''));
   ok(!isAllowedInterval(null));
+});
+
+test('interval aliases normalise case-insensitively', () => {
+  eq(normaliseInterval('1H'), '1h');
+  eq(normaliseInterval('1hour'), '1h');
+  eq(normaliseInterval('H1'), '1h');
+  eq(normaliseInterval('1D'), '1day');
+  eq(normaliseInterval(null), null);
+});
+
+test('canonical symbols map to the TwelveData wire form', () => {
+  // TwelveData requires the slash form for forex/metals — sending the
+  // canonical cache key verbatim is the provider 404.
+  eq(providerSymbol('EURUSD'), 'EUR/USD');
+  eq(providerSymbol('XAUUSD'), 'XAU/USD');
+  eq(providerSymbol('GBPUSD'), 'GBP/USD');
+  eq(providerSymbol('USDJPY'), 'USD/JPY');
+  eq(providerSymbol('US30'), 'DJI');
 });
 
 test('object rows normalise to the cached shape', () => {

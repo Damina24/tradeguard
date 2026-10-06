@@ -5,7 +5,7 @@
 // crosses 70% / 90% / 100% of its daily loss limit.
 //
 // Secrets (`supabase secrets set ...`):
-//   SUPABASE_SERVICE_KEY       required
+//   SERVICE_ROLE_KEY       required
 //   METAAPI_TOKEN             optional — without it we re-use the last known equity instead of failing
 //   FIREBASE_SERVICE_ACCOUNT  optional — without it we compute + store but do not push
 //
@@ -144,9 +144,9 @@ function json(body: unknown, status = 200): Response {
 }
 
 function supabase() {
-  const key = Deno.env.get('SUPABASE_SERVICE_KEY');
+  const key = Deno.env.get('SERVICE_ROLE_KEY');
   const url = Deno.env.get('SUPABASE_URL');
-  if (!key || !url) throw new Error('SUPABASE_SERVICE_KEY / SUPABASE_URL is not set');
+  if (!key || !url) throw new Error('SERVICE_ROLE_KEY / SUPABASE_URL is not set');
   return createClient(url, key);
 }
 
@@ -279,7 +279,7 @@ Deno.serve(async (req: Request) => {
   const now = new Date();
   const summary = { checked: 0, snapshots: 0, alerts: 0, skipped: 0, pruned: 0 };
 
-  if (!authorized(req.headers.get('Authorization'), Deno.env.get('SUPABASE_SERVICE_KEY'))) {
+  if (!authorized(req.headers.get('Authorization'), Deno.env.get('SERVICE_ROLE_KEY'))) {
     return json({ ok: false, error: 'Unauthorized' }, 401);
   }
 
