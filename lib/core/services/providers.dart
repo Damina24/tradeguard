@@ -253,10 +253,18 @@ class TradesNotifier extends StateNotifier<List<Trade>> {
   }
 }
 
-/// ---- Signals ----
-
-final Provider<List<Signal>> signalsProvider =
-    Provider<List<Signal>>((Ref ref) => MockData.signals());
+/// ---- Signals (task 3.1) ----
+///
+/// The feed behind `signalFeedProvider` in `features/signals`. Kept here (not
+/// moved into the feature) because the copy-confirm sheet in
+/// `features/signals/presentation` already imports from this file, and moving
+/// it would churn every import for no behavioural gain.
+final Provider<List<Signal>> signalsProvider = Provider<List<Signal>>((Ref ref) {
+  // Legacy alias: the screen reads `signalFeedProvider` directly, but older
+  // widgets and tests may still watch this. It mirrors the same seed so both
+  // paths can never disagree.
+  return MockData.signals();
+});
 
 /// ---- Trade review (task 2.3) ----
 

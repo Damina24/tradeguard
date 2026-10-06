@@ -210,7 +210,7 @@ ship a number that is technically correct and materially misleading:
 
 | # | Task | Status |
 |---|---|---|
-| 3.1 | Signals feed + stats | ⬜ |
+| 3.1 | Signals feed + stats | ✅ repository-backed feed (`SignalRepository` + `signalFeedProvider`: live `signals` table / offline seed), verified ledger (`SignalStats`: win rate withheld below 10 closed calls, open calls never results, cancelled never counted), loading/empty/error states, LIVE/OFFLINE DEMO badges |
 | 3.2 | Volatility radar | ⬜ |
 | 3.3 | AI chart analysis | ⬜ |
 | 3.4 | Copy confirm sheet + lots math | ⬜ |

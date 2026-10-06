@@ -8,6 +8,9 @@ import '../../features/patterns/data/supabase_pattern_repository.dart';
 import '../../features/replay/data/mock_price_bar_repository.dart';
 import '../../features/replay/data/price_bar_repository.dart';
 import '../../features/replay/data/supabase_price_bar_repository.dart';
+import '../../features/signals/data/mock_signal_repository.dart';
+import '../../features/signals/data/signal_repository.dart';
+import '../../features/signals/data/supabase_signal_repository.dart';
 import 'account_repository.dart';
 import 'auth_repository.dart';
 import 'broker_connect_service.dart';
@@ -63,6 +66,15 @@ class Services {
   late final PriceBarRepository prices = isMock
       ? MockPriceBarRepository()
       : SupabasePriceBarRepository();
+
+  /// Operator-posted signals (task 3.1). Mock mode returns the same fixture
+  /// shape the live table returns, so the feed and the verified stats are
+  /// fully exercisable with no backend and no credentials. The mock labels
+  /// its own output `OFFLINE DEMO` on the screen, because an unlabelled demo
+  /// feed is indistinguishable from live operator posts.
+  late final SignalRepository signals = isMock
+      ? MockSignalRepository()
+      : SupabaseSignalRepository();
 
   /// Registers a broker account with MetaAPI. Mock mode fabricates the id so the connect flow is
   /// usable before a `METAAPI_TOKEN` exists.
