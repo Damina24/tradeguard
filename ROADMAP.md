@@ -64,10 +64,9 @@ Exit: trader can watch live guard numbers and receive a breach alert.
       (`TWELVEDATA_KEY` never ships in the APK; the key stays in `supabase secrets` and the field in
       `AppConfig` is a documented placeholder that must remain empty); migration 0008 opens
       `prices_cache` for authenticated reads and revokes every client write, closing a cross-tenant
-      route where one user could have posted bars that another trader's backtest charted — 0008
-      approved but **not yet verified**: blocked on the 3a gate in `docs/BACKEND_DEPLOY.md`, which
-      must be run through PostgREST with a user JWT (the SQL Editor bypasses RLS and gives a false
-      green)
+      route where one user could have posted bars that another trader's backtest charted — ✅ **LIVE
+      2026-10-06** (3a gate passed via `tools/gate_0008.mjs` through PostgREST: user read = full
+      service-role count 2, anon = 0 as data, user POST = 403)
 
 Exit: D7 guard-open > 40%, journal import success > 90%.
 

@@ -160,7 +160,7 @@ bring-up, including the Vault secrets the cron job needs, is `docs/BACKEND_DEPLO
 | 2.3 | Trade detail + grading + screenshots | ✅ detail, deterministic A–D checklist grade, share card (screenshot upload still ⬜) |
 | 2.4 | Pattern views + leaks UI | ✅ `PatternRow`/`PatternMetrics` over `v_patterns`, mock-first, conservative leak detector; migration 0006 makes the views RLS-respecting 🧑 (not yet applied live) |
 | 2.5 | ai-review card | ✅ `ai-review` Edge Function (allowlist projection, prompt versioned in source) + `AiReviewCard` on S5, mock-first; migration 0007 makes `ai_reviews` SELECT-only and idempotent 🧑 (not yet applied live) |
-| 2.6 | Replay lite | ✅ bar-by-bar replay engine (pessimistic fill rules), `ReplayScan` with a reporting floor, fl_chart chart + play/step transport, mock-first; `market-bars` Edge Function + migration 0008 open `prices_cache` for reads and revoke every client write 🧑 **not live** — 0008 approved but unverified; blocked on the 3a gate in `docs/BACKEND_DEPLOY.md` |
+| 2.6 | Replay lite | ✅ bar-by-bar replay engine (pessimistic fill rules), `ReplayScan` with a reporting floor, fl_chart chart + play/step transport, mock-first; `market-bars` Edge Function + migration 0008 open `prices_cache` for reads and revoke every client write — ✅ **LIVE 2026-10-06** (3a gate passed via `tools/gate_0008.mjs`: user read = full count 2, anon = 0 as data, user POST = 403) |
 
 Ten deliberate calls worth recording, because a backtest is the easiest place in this product to
 ship a number that is technically correct and materially misleading:

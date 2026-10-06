@@ -30,6 +30,15 @@
 -- using their own bearer token, validates the symbol against a fixed allowlist, fetches from
 -- TwelveData with the server-side key, normalises the response, and upserts on `(symbol, timeframe)`
 -- so a refresh is idempotent.
+--
+-- Live verification (2026-10-06, project jrzmqtmuatnnmwbrydio): `supabase db push --dry-run`
+-- reports "Remote database is up to date"; `pg_policies` shows
+-- `"read cached bars" | SELECT | {authenticated}`; `pg_indexes` shows
+-- `prices_cache_pkey, prices_cache_updated_idx`; and the PostgREST gate in
+-- `tools/gate_0008.mjs` passed ALL 3 checks through the REST layer (user read
+-- returns the full service-role count of 2, anon reads 0 as data, user POST
+-- denied with 403). Task 2.6 is therefore LIVE — the replay reads real cached
+-- bars for any signed-in trader and no client role can poison the shared cache.
 
 -- ---------------------------------------------------------------------------------------------
 -- 1. Read access
@@ -73,9 +82,15 @@ comment on index prices_cache_updated_idx is
 -- ---------------------------------------------------------------------------------------------
 -- Verification notes
 -- ---------------------------------------------------------------------------------------------
--- NOT executed against a live Supabase project in this environment. The behaviour above is reasoned
--- from Postgres/PostgREST semantics, not observed, so migration 0008 is NOT verified. Task 2.6 must
--- not be called live until the checks below have actually been run and passed.
+-- VERIFIED LIVE 2026-10-06 (project jrzmqtmuatnnmwbrydio) via `tools/gate_0008.mjs`
+-- through PostgREST, not the SQL Editor (postgres bypasses RLS and proves nothing):
+--   1. signed-in trader GET returns the FULL service-role count (2 == 2);
+--   2. anon GET returns count 0 as data (RLS filters silently);
+--   3. signed-in trader POST denied with 403 (cross-tenant write closed).
+-- `supabase db push --dry-run` reports "Remote database is up to date";
+-- `pg_policies` shows "read cached bars" | SELECT | {authenticated};
+-- `pg_indexes` shows prices_cache_pkey, prices_cache_updated_idx.
+-- Task 2.6 is LIVE. Detail at the top of this file.
 --
 -- The checks belong in `docs/BACKEND_DEPLOY.md` section 3a ("Gate: verify migration 0008"); they are
 -- restated here so the migration and the deploy runbook cannot drift apart. Three points matter:
