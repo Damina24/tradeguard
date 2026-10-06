@@ -5,20 +5,27 @@ import '../../../core/constants/app_strings.dart';
 import '../../../core/models/signal.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_text_styles.dart';
-import '../../../core/utils/formatters.dart';
 import '../domain/signal_stats.dart';
 import '../signal_providers.dart';
 import '../widgets/signal_card.dart';
 import '../widgets/signal_stats_card.dart';
 import 'copy_confirm_sheet.dart';
 
-/// Signals feed + verified stats (task 3.1).
+/// Signals feed + verified stats (task 3.1) and volatility radar (3.2).
 ///
 /// The feed reads `signalFeedProvider`: the `signals` table in live mode, the
 /// offline seed in mock mode. The stats card reads `signalStatsProvider` and
 /// states a win rate only above [SignalStats.minimumClosed] closed calls — a
 /// ledger too thin to support a rate prints its sample size and no rate at
 /// all, never a flattering percentage off three calls.
+///
+/// The volatility radar lives INSIDE the stats card rather than as its own
+/// card here: it is one reading beside the ledger, and a separate card would
+/// mean a second place deciding what to show for "bars not ready". The
+/// placeholder card this screen once carried showed a hardcoded score with
+/// invented news drivers — that has been deleted, not reimplemented,
+/// because fabricated newswire text is indistinguishable from real market
+/// context on screen.
 class SignalsScreen extends ConsumerWidget {
   const SignalsScreen({super.key});
 
@@ -39,8 +46,6 @@ class SignalsScreen extends ConsumerWidget {
       body: ListView(
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
         children: <Widget>[
-          const _RadarCard(),
-          const SizedBox(height: 16),
           ElevatedButton.icon(
             onPressed: () => ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(
@@ -217,59 +222,6 @@ class _DemoBadge extends StatelessWidget {
       child: Text(
         'OFFLINE DEMO',
         style: AppTextStyles.label.copyWith(color: AppColors.warning),
-      ),
-    );
-  }
-}
-
-class _RadarCard extends StatelessWidget {
-  const _RadarCard();
-
-  @override
-  Widget build(BuildContext context) {
-    const double score = 64;
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppColors.divider),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
-          const Text('VOLATILITY RADAR', style: AppTextStyles.label),
-          const SizedBox(height: 8),
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: <Widget>[
-              Text(
-                '${score.toInt()}',
-                style: AppTextStyles.metric.copyWith(color: AppColors.warning),
-              ),
-              const SizedBox(width: 8),
-              const Padding(
-                padding: EdgeInsets.only(bottom: 6),
-                child: Text('elevated', style: AppTextStyles.muted),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          ClipRRect(
-            borderRadius: BorderRadius.circular(8),
-            child: const LinearProgressIndicator(
-              value: score / 100,
-              minHeight: 10,
-              backgroundColor: AppColors.surfaceAlt,
-              valueColor: AlwaysStoppedAnimation<Color>(AppColors.warning),
-            ),
-          ),
-          const SizedBox(height: 10),
-          Text(
-            'Top drivers: USD CPI, XAUUSD momentum, DXY ${Formatters.pct(-0.4)}',
-            style: AppTextStyles.muted,
-          ),
-        ],
       ),
     );
   }

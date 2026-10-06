@@ -1,4 +1,5 @@
 import '../../../core/models/signal.dart';
+import 'volatility_score.dart';
 
 /// Verified stats over closed signals: "what the posted calls did".
 ///
@@ -20,6 +21,14 @@ import '../../../core/models/signal.dart';
 ///   * **Cancelled calls never count at all.** A call that was withdrawn
 ///     before it could resolve is not a trade, and treating it as a loss
 ///     would make a selective desk look like it missed money.
+///
+/// The single cross-domain member is [volatility], and its boundary is
+/// deliberate: the ledger still never *derives* anything from prices —
+/// `SignalStats.of` cannot see a bar. The radar score is computed from bars
+/// by `VolatilityScore.of` and ATTACHED here as a separate observation,
+/// always optional and null until a usable series exists, so the stats and
+/// the radar can be rendered from one state object without the ledger ever
+/// claiming the market produced its numbers.
 class SignalStats {
   const SignalStats({
     required this.total,
@@ -29,6 +38,7 @@ class SignalStats {
     required this.losses,
     required this.netPips,
     required this.avgPips,
+    this.volatility,
   });
 
   /// Minimum closed calls before a win rate may be stated. Ten, not five: a
@@ -69,6 +79,31 @@ class SignalStats {
   /// Mean pips per closed call. Null when [closed] is zero, so "no closed
   /// calls" and "closed calls netted zero" cannot look alike.
   final double? avgPips;
+
+  /// The volatility radar reading for the market bars behind this feed.
+  ///
+  /// Null until a usable bar series has been measured — and the UI must
+  /// render that as "not measured", never as a score of 0 (which would read
+  /// as "market dead calm"). Attached via [withVolatility]; `of` never sets
+  /// it, because the ledger does not read prices.
+  final VolatilityScore? volatility;
+
+  /// Returns a copy of these stats with [value] attached.
+  ///
+  /// Every ledger figure is passed through untouched: the radar and the
+  /// ledger are two observations shown side by side, and neither may
+  /// recompute the other. This is also why it is `with…` rather than a
+  /// setter — `SignalStats` stays immutable once built.
+  SignalStats withVolatility(VolatilityScore? value) => SignalStats(
+        total: total,
+        active: active,
+        closed: closed,
+        wins: wins,
+        losses: losses,
+        netPips: netPips,
+        avgPips: avgPips,
+        volatility: value,
+      );
 
   /// Closed calls behind the ledger — the honest sample size for every claim.
   int get sampleSize => closed;
@@ -121,5 +156,6 @@ class SignalStats {
 
   @override
   String toString() => 'SignalStats(total=$total, active=$active, '
-      'closed=$closed, wins=$wins, losses=$losses, netPips=$netPips)';
+      'closed=$closed, wins=$wins, losses=$losses, netPips=$netPips, '
+      'volatility=${volatility?.score})';
 }

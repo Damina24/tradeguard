@@ -3,6 +3,7 @@ import 'package:tradeguard/core/models/signal.dart';
 import 'package:tradeguard/core/services/services.dart';
 import 'package:tradeguard/features/signals/data/mock_signal_repository.dart';
 import 'package:tradeguard/features/signals/domain/signal_stats.dart';
+import 'package:tradeguard/features/signals/domain/volatility_score.dart';
 
 Signal signal({
   String id = 's1',
@@ -136,6 +137,65 @@ void main() {
       expect(stats.winRate, closeTo(66.67, 0.01));
       expect(stats.netPips, 410);
       expect(stats.avgPips, closeTo(34.17, 0.01));
+    });
+  });
+
+  group('SignalStats volatility wiring', () {
+    const VolatilityScore score = VolatilityScore(
+      score: 64,
+      barCount: 240,
+      baselineAtr: 1.2,
+      recentAtr: 1.8,
+      rangePct: 0.31,
+      expansionPct: 50,
+    );
+
+    test('of() never reads prices — volatility starts null', () {
+      final SignalStats stats = SignalStats.of(reportableLedger());
+      expect(stats.volatility, isNull);
+      expect(SignalStats.empty.volatility, isNull);
+    });
+
+    test('withVolatility attaches the score and leaves the ledger untouched',
+        () {
+      final SignalStats base = SignalStats.of(reportableLedger());
+      final SignalStats withScore = base.withVolatility(score);
+
+      expect(withScore.volatility, same(score));
+      expect(withScore.total, base.total);
+      expect(withScore.closed, base.closed);
+      expect(withScore.wins, base.wins);
+      expect(withScore.losses, base.losses);
+      expect(withScore.netPips, base.netPips);
+      expect(withScore.avgPips, base.avgPips);
+      expect(withScore.winRate, base.winRate);
+    });
+
+    test('the original stats are unchanged — stats stay immutable', () {
+      final SignalStats base = SignalStats.of(reportableLedger());
+      base.withVolatility(score);
+      expect(base.volatility, isNull);
+    });
+
+    test('empty ledger stats can still carry a radar reading', () {
+      final SignalStats stats = SignalStats.empty.withVolatility(score);
+      expect(stats.total, 0);
+      expect(stats.winRate, isNull);
+      expect(stats.volatility, same(score));
+    });
+
+    test('withVolatility(null) clears the reading', () {
+      final SignalStats stats =
+          SignalStats.empty.withVolatility(score).withVolatility(null);
+      expect(stats.volatility, isNull);
+    });
+
+    test('toString reports the score, or null when not measured', () {
+      expect(
+        SignalStats.empty.withVolatility(score).toString(),
+        contains('volatility=64'),
+      );
+      expect(SignalStats.empty.toString(), contains('volatility=null'));
     });
   });
 }

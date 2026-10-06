@@ -211,7 +211,7 @@ ship a number that is technically correct and materially misleading:
 | # | Task | Status |
 |---|---|---|
 | 3.1 | Signals feed + stats | ✅ repository-backed feed (`SignalRepository` + `signalFeedProvider`: live `signals` table / offline seed), verified ledger (`SignalStats`: win rate withheld below 10 closed calls, open calls never results, cancelled never counted), loading/empty/error states, LIVE/OFFLINE DEMO badges |
-| 3.2 | Volatility radar | ⬜ |
+| 3.2 | Volatility radar | ✅ pure `VolatilityScore` (two 14-bar true-range windows → expansion + position components → banded 0–100, zero-baseline/NaN guards, null below 29 bars), attached to `SignalStats.volatility` via `withVolatility` (ledger untouched), `signalRadarBarsProvider` reuses the replay bar read (one fetch serves both screens), radar section on `SignalStatsCard` with measuring/error/too-short/stale states + provenance (`SYNTHETIC DEMO`/`CACHED`), hardcoded score-64 card with invented newswire drivers deleted |
 | 3.3 | AI chart analysis | ⬜ |
 | 3.4 | Copy confirm sheet + lots math | ⬜ |
 | 3.5 | copy-signal edge (paper default) | ⬜ |
