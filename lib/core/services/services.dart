@@ -10,6 +10,9 @@ import '../../features/replay/data/price_bar_repository.dart';
 import '../../features/replay/data/supabase_price_bar_repository.dart';
 import '../../features/signals/data/mock_signal_repository.dart';
 import '../../features/signals/data/signal_repository.dart';
+import '../../features/chart_analysis/data/chart_analysis_repository.dart';
+import '../../features/chart_analysis/data/mock_chart_analysis_repository.dart';
+import '../../features/chart_analysis/data/supabase_chart_analysis_repository.dart';
 import '../../features/signals/data/supabase_signal_repository.dart';
 import 'account_repository.dart';
 import 'auth_repository.dart';
@@ -75,6 +78,13 @@ class Services {
   late final SignalRepository signals = isMock
       ? MockSignalRepository()
       : SupabaseSignalRepository();
+
+  /// Chart analysis (task 3.3). Mock mode returns a deterministic,
+  /// off-line-labelled analysis so the screen is fully exercisable before
+  /// the `ai-analyze-chart` Edge Function is deployed.
+  late final ChartAnalysisRepository chartAnalysis = isMock
+      ? MockChartAnalysisRepository()
+      : SupabaseChartAnalysisRepository();
 
   /// Registers a broker account with MetaAPI. Mock mode fabricates the id so the connect flow is
   /// usable before a `METAAPI_TOKEN` exists.

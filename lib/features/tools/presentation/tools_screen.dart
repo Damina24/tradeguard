@@ -22,6 +22,11 @@ class ToolsScreen extends StatelessWidget {
             icon: const Icon(Icons.replay),
             onPressed: () => context.push('/tools/replay'),
           ),
+          IconButton(
+            tooltip: 'Analyse a chart screenshot',
+            icon: const Icon(Icons.auto_awesome),
+            onPressed: () => context.push('/tools/chart-analysis'),
+          ),
         ],
       ),
       body: ListView(

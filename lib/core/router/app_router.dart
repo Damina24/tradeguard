@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../features/auth/presentation/auth_screen.dart';
+import '../../features/chart_analysis/presentation/chart_analysis_screen.dart';
 import '../../features/guard/presentation/guard_screen.dart';
 import '../../features/journal/presentation/journal_screen.dart';
 import '../../features/patterns/presentation/pattern_insights_screen.dart';
@@ -89,6 +90,11 @@ final Provider<GoRouter> routerProvider = Provider<GoRouter>((Ref ref) {
                   GoRoute(
                     path: 'replay',
                     builder: (_, __) => const ReplayScreen(),
+                  ),
+                  GoRoute(
+                    path: 'chart-analysis',
+                    builder: (_, __) =>
+                        const ChartAnalysisScreen(),
                   ),
                 ],
               ),
