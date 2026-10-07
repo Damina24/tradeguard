@@ -27,6 +27,7 @@ create table broker_accounts (
   max_drawdown numeric,
   drawdown_type text not null default 'static', -- static|trailing
   equity_guard_enabled boolean not null default false,
+  copy_enabled boolean not null default false,      -- per-account copy permission (migration 0009)
   is_active boolean not null default true,
   created_at timestamptz not null default now()
 );
@@ -86,8 +87,18 @@ create table signal_follows (
   lots numeric, risk_pct numeric,
   mode text not null default 'paper',           -- paper|live
   copy_status text not null default 'pending',  -- pending|placed|filled|failed|closed
+  order_id text,                                -- broker order id; LIVE rows only, paper rows NULL (migration 0009)
   pnl numeric default 0,
   created_at timestamptz not null default now()
+);
+
+create table copy_settings (
+  user_id uuid primary key references profiles(id) on delete cascade,
+  live_consent boolean not null default false,           -- live copy consent (task 3.6)
+  kill_switch boolean not null default false,            -- blocks ALL follows when true
+  max_lots numeric not null default 5.0,                 -- = DEFAULT_MAX_LOTS
+  max_concurrent_follows int not null default 5,         -- = DEFAULT_MAX_CONCURRENT_FOLLOWS
+  updated_at timestamptz not null default now()
 );
 
 create table ai_reviews (
@@ -130,6 +141,39 @@ Three properties that are deliberate rather than incidental:
   different timezones would otherwise replay different series for the same symbol. Naive timestamps are
   pinned to UTC so the cache holds one canonical answer.
 
+### `copy_settings`, `broker_accounts.copy_enabled`, `signal_follows.order_id` (migration 0009)
+
+The schema half of the `copy-signal` contract (tasks 3.5/3.6). The guardrail *policy* lives in
+`supabase/functions/copy-signal/shared.ts` (`evaluateAccount`, unit-tested in
+`copy_signal_test.ts`) — this migration only stores the facts it reads, and deliberately does not
+duplicate any rule in SQL.
+
+| Element | Type | Contract |
+|---|---|---|
+| `broker_accounts.copy_enabled` | boolean, NOT NULL, default `false` | Per-account permission. `evaluateAccount` reads it as `row?.copy_enabled === true`; off by default, refusal `accountDisabled`. Toggled by the owner under `own accounts`. |
+| `copy_settings.user_id` | uuid, PK → `profiles(id)` on delete cascade | One row per trader, created lazily — an **absent row means "all defaults"** (index.ts falls back to `DEFAULT_SETTINGS`). |
+| `copy_settings.live_consent` | boolean, NOT NULL, default `false` | Stored live consent. Requesting `mode: 'live'` without it is a refusal (`consentRequired`), never a silent downgrade to paper. |
+| `copy_settings.kill_switch` | boolean, NOT NULL, default `false` | When `true`, copy-signal refuses **every** follow, paper included. |
+| `copy_settings.max_lots` | numeric, NOT NULL, default `5.0` | Mirrors `DEFAULT_MAX_LOTS`. Over the cap is refused (`maxLots`), never clamped. |
+| `copy_settings.max_concurrent_follows` | int, NOT NULL, default `5` | Mirrors `DEFAULT_MAX_CONCURRENT_FOLLOWS`. |
+| `copy_settings.updated_at` | timestamptz, NOT NULL, default `now()` | Set by the writer (no trigger — same convention as `prices_cache.updated_at`). |
+| `signal_follows.order_id` | text, **nullable** | Broker order id (`orderId ?? positionId ?? id`, else the literal `'accepted'` on an unparseable 2xx). **Live rows always carry one** — a null order id is reported `failed` and never inserted — and **paper rows are always NULL**, because the paper branch omits the column entirely. Enforced by the `signal_follows_live_needs_order_id` check (`mode <> 'live' or order_id is not null`). |
+
+Three properties that are deliberate:
+
+- **The four `copy_settings` defaults are `DEFAULT_SETTINGS`, verbatim.** The function treats a
+  missing row and a row at defaults identically, so the column defaults keep the database honest
+  about that equivalence. Paper is the default posture everywhere: consent OFF, kill switch OFF,
+  conservative caps.
+- **RLS is own-row only** (`own copy settings`, `for all using/check auth.uid() = user_id`) — the
+  same shape as `own accounts`/`own follows` in migration 0002. `copy_settings` is read by the
+  Edge Function under the service role (which bypasses RLS) scoped to the verified JWT id, so the
+  policy only has to constrain client sessions. A missing `with check` would let a trader write
+  under another trader's `user_id` — i.e. flip someone else's kill switch.
+- **`order_id` is text, not uuid** — MetaAPI's identifier (or the `'accepted'` stand-in) has no
+  uuid guarantee. Its nullability is the paper/live execution contract read off `index.ts`, not a
+  convention: nullable overall, NOT NULL-for-live via the check constraint.
+
 ## 3. Indexes
 
 ```sql
@@ -150,6 +194,7 @@ alter table signal_follows enable row level security;
 alter table ai_reviews enable row level security;
 alter table signals enable row level security;
 alter table prices_cache enable row level security;
+alter table copy_settings enable row level security;
 
 create policy "own profile" on profiles
   for all using (auth.uid() = id) with check (auth.uid() = id);
@@ -161,6 +206,9 @@ create policy "own trades" on trades
   for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
 
 create policy "own follows" on signal_follows
+  for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
+
+create policy "own copy settings" on copy_settings
   for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
 
 create policy "own reviews" on ai_reviews
