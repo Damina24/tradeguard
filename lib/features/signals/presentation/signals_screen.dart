@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../../core/constants/app_strings.dart';
 import '../../../core/models/signal.dart';
@@ -47,11 +48,9 @@ class SignalsScreen extends ConsumerWidget {
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
         children: <Widget>[
           ElevatedButton.icon(
-            onPressed: () => ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('AI chart analysis unlocks in Phase 3.'),
-              ),
-            ),
+            // Task 3.3 shipped the screen; the button that still announced
+            // "unlocks in Phase 3" was a stale claim, not a plan.
+            onPressed: () => context.push('/tools/chart-analysis'),
             style: ElevatedButton.styleFrom(
               backgroundColor: AppColors.accent,
               foregroundColor: Colors.white,
