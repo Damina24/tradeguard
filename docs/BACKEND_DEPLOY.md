@@ -35,7 +35,12 @@ supabase link --project-ref <project-ref>
 supabase db push
 ```
 
-That applies `0001_init.sql` … `0008_prices_cache_rls.sql`. The cron migrations need two Vault
+That applies `0001_init.sql` … `0009_copy_signal_schema.sql`. Migration 0009 is the copy-signal
+schema (tasks 3.5/3.6): `broker_accounts.copy_enabled` (per-account permission, OFF by default),
+`copy_settings` (live consent, kill switch, lot + concurrent caps, absent row == defaults), and
+`signal_follows.order_id` (live rows always carry one, paper rows always NULL — enforced by the
+`signal_follows_live_needs_order_id` check). It stores the facts the `copy-signal` policy reads
+and duplicates no rule in SQL. The cron migrations need two Vault
 secrets, so insert them **before** pushing them — or re-run them afterwards:
 
 ```sql
@@ -232,6 +237,60 @@ Its policy lives in `supabase/functions/market-bars/shared.ts` and is unit-teste
 node supabase/functions/market-bars/market-bars_test.ts
 # → market-bars: 21 passed
 ```
+
+---
+
+## 3b. The `copy-signal` function (tasks 3.5/3.6)
+
+```bash
+supabase functions deploy copy-signal
+```
+
+`copy-signal` is **user-facing** (a trader taps Copy on a signal), so it uses the `ai-review`
+gate — `verify_jwt = true` plus a GoTrue lookup of the caller's own bearer — *not* the
+service-role gate the two cron workers use. It needs `SUPABASE_URL` / `SUPABASE_SERVICE_KEY` /
+`SUPABASE_ANON_KEY` (platform-provided); `METAAPI_TOKEN` is required for LIVE mode only —
+paper mode never touches MetaAPI, and a live request without the token fails `notConfigured`
+(503) rather than being downgraded to paper.
+
+Its policy lives in `supabase/functions/copy-signal/shared.ts` (`evaluateAccount`) and is
+unit-tested without a runtime — this is the same suite CI runs:
+
+```bash
+node supabase/functions/copy-signal/copy_signal_test.ts
+# → copy-signal: 23 tests passed
+```
+
+The Dart half of the contract (parity fixtures identical to the TS table, `CopySettings`
+defaults, `CopyPreview` ladder) is covered by `flutter test` (`test/copy_policy_test.dart` +
+`test/copy_confirm_sheet_test.dart`). A formula change that lands on one side only fails both
+suites.
+
+```bash
+curl -X POST "https://<project-ref>.supabase.co/functions/v1/copy-signal" \
+  -H "Authorization: Bearer <a user access token>" \
+  -H "apikey: <anon key>" \
+  -H "Content-Type: application/json" \
+  -d '{"signal_id":"<uuid>","account_ids":["<uuid>"],"risk_pct":1,"mode":"paper"}'
+# → {"ok":true,"mode":"paper","results":[{"account_id":"…","mode":"paper","lots":1.33,…,"simulated":true}]}
+```
+
+Behaviours worth checking explicitly, because each is deliberate:
+
+- **Paper is the default and live is never inferred.** Any `mode` other than the exact string
+  `live` runs as paper; a `live` ask without stored `copy_settings.live_consent` is refused
+  (`consentRequired`), never silently downgraded.
+- **The kill switch blocks everything, paper included** (`killSwitch` refusal first in the order).
+- **Per-account permission is OFF by default**: a freshly connected account refuses every follow
+  (`accountDisabled`) until the trader enables copy for it.
+- **Lots are recomputed server-side** from server-side equity (`equity_snapshots`, fallback
+  `initial_balance`) with `risk_pct` clamped to 0.25–5.00%; over the cap is refused (`maxLots`),
+  never silently clamped. No client-supplied size ever reaches a row or a broker.
+- **Live rows always carry `order_id`** (paper rows always NULL — the `signal_follows_live_needs_order_id`
+  check). A live order whose id came back null is reported `failed` and never inserted.
+- **No master/slave routing exists**: each requested account is evaluated independently in
+  request order, and an id that is not the caller's is `accountMissing` — identical to a
+  nonexistent account, so the endpoint cannot probe for other traders' ids.
 
 ---
 

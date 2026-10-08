@@ -15,7 +15,7 @@ Status legend: ✅ done · 🔄 in progress · ⬜ todo · 🧑 human gate
 | 0.7 | Supabase migration + edge function stubs | ✅ |
 | 0.8 | env samples + .gitignore + CI | ✅ |
 | 0.9 | `flutter pub get` + analyze + test pass | ✅ (Flutter 3.47.6, 104 tests, APK builds) |
-| 0.10 | Git init + first commit | ⬜ |
+| 0.10 | Git init + first commit | ✅ |
 
 ## Phase 1 — Guard MVP
 
@@ -214,8 +214,8 @@ ship a number that is technically correct and materially misleading:
 | 3.2 | Volatility radar | ✅ pure `VolatilityScore` (two 14-bar true-range windows → expansion + position components → banded 0–100, zero-baseline/NaN guards, null below 29 bars), attached to `SignalStats.volatility` via `withVolatility` (ledger untouched), `signalRadarBarsProvider` reuses the replay bar read (one fetch serves both screens), radar section on `SignalStatsCard` with measuring/error/too-short/stale states + provenance (`SYNTHETIC DEMO`/`CACHED`), hardcoded score-64 card with invented newswire drivers deleted |
 | 3.3 | AI chart analysis | ✅ mock-first `ChartAnalysis` (levels 6 / tp 3 / note 400 caps, bias fallback to neutral) + `ai-analyze-chart` Edge Function (JWT caller, ownership prefix, temp Storage read + delete, `gpt-4o-mini`) + screen at `/tools/chart-analysis` with result sheet + risk disclaimer |
 | 3.4 | Copy confirm sheet + lots math | ✅ `CopyConfirmSheet` rebuilt to S8: multi-account picker seeded once from the guard selection (local state — picking a copy target never moves the guard's account), risk slider 0.25–5.00% default 1% = server clamp band, per-account lots/max-loss/pip-value preview via pure `CopyPreview.of` (client-knowable half of `evaluateAccount`: inactive → invalid → maxLots, refused size reported not clamped), `CopySettings` Dart mirror of `DEFAULT_SETTINGS` + `clampRiskPct`, paper pill, verbatim `AppStrings.riskDisclaimer`, confirm → paper-toast that says nothing went to a broker; refusal reasons keep their exact `Refusal` names for 1:1 mapping in 3.5; parity fixtures identical to `copy_signal_test.ts` in `test/copy_policy_test.dart` + 5 sheet widget tests; Signals' stale "AI unlocks in Phase 3" button now routes to `/tools/chart-analysis` |
-| 3.5 | copy-signal edge (paper default) | ⬜ |
-| 3.6 | Live copy consent + kill switch | ⬜ |
+| 3.5 | copy-signal edge (paper default) | ✅ Paper-only client seam: `CopySignalRepository` (Supabase `functions.invoke('copy-signal')` + mock stub with seeded equity), refusal mapping 1:1 (`CopyRefusal.values.byName`), safe error handling (`CopySignalFailure` trader wording, never raw server text), HTTP-status classifier + batch-error mapper, `countOpenFollows` scoped to caller (RLS `own follows` ↔ server JWT filter — same rows) for the preview's `maxConcurrent` prediction; server recomputes lots from server-side equity and recounts at request time, so a stale count costs a preview, never a placement |
+| 3.6 | Live copy consent + kill switch | ✅ `CopySettingsRepository` (Supabase own-row RLS read/upsert + mock in-memory row, absent row == `DEFAULT_SETTINGS` on both sides) with `CopySettings` Dart mirror (liveConsent/killSwitch/maxLots 5.0/maxConcurrent 5, risk band 0.25–5.00% default 1%, 10-account cap) wired through `Services` + `copySettingsProvider` (pessimistic saves, one generic save-error line); per-account `copy_enabled` toggle on `TradingAccount` + `AccountRepository.setCopyEnabled` (Supabase + mock, OFF by default → `accountDisabled`); `CopyPreview.of` ladder mirrors `evaluateAccount` order for every client-knowable rule (kill switch → ownership gap (`accountMissing` server-only, mapped but never predicted) → signal validity → `copy_enabled` → live consent → sizing → lot cap (refused size reported) → broker link (live-only) → concurrent cap via `openFollowsProvider`) with 1:1 `CopyRefusal` names; no master/slave routing — each account evaluated independently in request order |
 
 ## Phase 4 — Monetize + Ship
 

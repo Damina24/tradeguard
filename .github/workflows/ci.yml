@@ -20,7 +20,11 @@ jobs:
       - run: flutter pub get
       - run: dart format --output=none --set-exit-if-changed lib test
       - run: flutter analyze
-      - run: flutter test --coverage
+      - run: flutter test --exclude-tags=disabled
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: node supabase/functions/copy-signal/copy_signal_test.ts
 
   android-build:
     runs-on: ubuntu-latest

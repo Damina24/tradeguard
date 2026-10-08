@@ -70,13 +70,16 @@ Exit: trader can watch live guard numbers and receive a breach alert.
 
 Exit: D7 guard-open > 40%, journal import success > 90%.
 
-## Phase 3 — Signals + Copy (Week 7–9) ⬜
+## Phase 3 — Signals + Copy (Week 7–9) 🔄
 
-- Signals feed + admin post + verified stats
-- Volatility radar (newswire score, static seed then live)
-- AI chart analysis (screenshot upload)
+- ✅ Signals feed + verified stats (`SignalRepository` + `signalFeedProvider`: live `signals` table / offline seed; `SignalStats` ledger: win rate withheld below 10 closed calls, open calls never results, cancelled never counted; loading/empty/error states, LIVE/OFFLINE DEMO badges)
+- ✅ Volatility radar (pure banded ATR scorer over `market-bars` cache; `signalRadarBarsProvider` reuses the replay bar read; measuring/error/too-short/stale states + SYNTHETIC DEMO/CACHED provenance)
+- ✅ AI chart analysis (`ChartAnalysis` mock-first + `ai-analyze-chart` Edge Function + `/tools/chart-analysis` screen with result sheet + risk disclaimer)
+- ✅ Copy confirm sheet + lots math (S8 sheet: multi-account picker local to the sheet, risk slider 0.25–5.00% default 1%, per-account lots/max-loss/pip-value preview via pure `CopyPreview.of`, paper pill, verbatim `AppStrings.riskDisclaimer`, parity fixtures identical to `copy_signal_test.ts` in `test/copy_policy_test.dart` + sheet widget tests)
+- ✅ copy-signal edge, paper default (`copy-signal` function: lots recomputed from server-side equity, per-account `evaluateAccount` guardrails, paper simulates + logs, live needs exact `mode:'live'` + stored consent + kill switch OFF + per-account `copy_enabled` + MetaAPI link + caps; client seam `CopySignalRepository` paper-only with 1:1 refusal mapping + trader-safe `CopySignalFailure` wording)
+- ✅ Live copy consent + kill switch (`copy_settings` row via `CopySettingsRepository` own-row RLS, absent == defaults; per-account `copy_enabled` toggle OFF by default; `CopyPreview` ladder mirrors `evaluateAccount` order with 1:1 refusal names; preview is never authorization — the server re-runs every rule)
+- ⬜ Master/slave multi-account routing — NOT built (out of scope: each account is evaluated independently in request order; no routing layer exists)
 - Copy-signal: risk% → lots → MetaAPI order. **Paper mode ON by default.** 🧑 review before live
-- Master/slave multi-account routing
 
 Exit: copy preview accuracy 100% vs lot formula tests, live copy gated behind explicit opt-in.
 

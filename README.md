@@ -6,10 +6,24 @@ copy-trading. Flutter (iOS + Android) on Supabase, MetaAPI, FCM, RevenueCat and 
 - **Store title:** `TradeGuard - Forex Signals`
 - **Bundle ID:** `com.tradeguard.app`
 
-## Status: Phase 0 (scaffold)
+## Status: Phase 3 — Signals + Copy (copy guardrails complete, master/slave routing out of scope)
 
 The app boots in **mock mode** with seeded demo data (EVAL $100k + FUNDED $50k) so every screen
 works without any keys.
+
+Copy-trading state: confirm sheet + lots math (3.4), paper-only client seam with 1:1 refusal
+mapping (3.5), and live-consent / kill-switch / per-account toggles with a preview ladder that
+mirrors the server order (3.6) are all committed. Paper mode is the default everywhere; live
+needs stored consent and a human review before any broker order. Each account is evaluated
+independently — no master/slave routing exists.
+
+Verify with:
+
+```bash
+flutter analyze
+flutter test --exclude-tags=disabled
+node supabase/functions/copy-signal/copy_signal_test.ts
+```
 
 ## Quick start
 
