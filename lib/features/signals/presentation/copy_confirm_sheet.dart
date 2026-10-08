@@ -10,9 +10,12 @@ import '../../../core/theme/app_text_styles.dart';
 import '../../../core/utils/formatters.dart';
 import '../../../core/utils/trading_math.dart';
 import '../../../core/widgets/disclaimer_note.dart';
+import '../data/copy_signal_repository.dart';
 import '../domain/copy_preview.dart';
+import '../signal_providers.dart';
+import '../domain/copy_signal.dart';
 
-/// S8 — the copy confirm bottom sheet (task 3.4).
+/// S8 — the copy confirm bottom sheet (task 3.5).
 ///
 /// Signal summary, account picker, risk slider (0.25–5.0%, default 1%),
 /// per-account lots / pip value / max-loss preview, paper-mode pill,
@@ -21,23 +24,24 @@ import '../domain/copy_preview.dart';
 /// Every number comes from [CopyPreview.of] / [TradingMath] — the same
 /// formula the `copy-signal` Edge Function applies server-side (the parity
 /// fixtures are duplicated verbatim in `test/copy_policy_test.dart`, so the
-/// two sides cannot drift apart silently). The sheet never authorizes
-/// anything: it shows what WOULD be placed, and the server recomputes from
-/// live equity and re-runs every guardrail before anything is ordered.
+/// two sides cannot drift apart silently). Nothing is authorized here:
+/// after the button is tapped the sheet asks the `copy-signal` Edge
+/// Function (paper mode) and reports its exact verdict per account —
+/// lots, refusal name, simulated flag — before the sheet dismisses.
 ///
 /// Selection is local state, deliberately NOT `selectedAccountIdProvider`:
 /// picking a copy target must not move the Guard screen's account
 /// underneath the trader. It is only seeded from that provider once.
-class CopyConfirmSheet extends StatefulWidget {
+class CopyConfirmSheet extends ConsumerStatefulWidget {
   const CopyConfirmSheet({required this.signal, super.key});
 
   final Signal signal;
 
   @override
-  State<CopyConfirmSheet> createState() => _CopyConfirmSheetState();
+  ConsumerState<CopyConfirmSheet> createState() => _CopyConfirmSheetState();
 }
 
-class _CopyConfirmSheetState extends State<CopyConfirmSheet> {
+class _CopyConfirmSheetState extends ConsumerState<CopyConfirmSheet> {
   /// Band and default from [CopySettings] — identical to the server's
   /// `MIN_RISK_PCT` / `MAX_RISK_PCT` / `DEFAULT_RISK_PCT`, so a preview this
   /// sheet accepted can never be resized by the server's clamp.
@@ -46,6 +50,15 @@ class _CopyConfirmSheetState extends State<CopyConfirmSheet> {
   /// Accounts to copy into, seeded once from the Guard screen's selection.
   final Set<String> _selectedIds = <String>{};
   bool _selectionSeeded = false;
+
+  /// The paper batch the copy service answered for this sheet (discarded
+  /// with the sheet). `last write wins` — a rebuild never mixes two batches.
+  CopySignalResult? _result;
+
+  /// The copy-service repository for this sheet. Set once in `initState`
+  /// from [copySignalRepositoryProvider] — tests override that provider to
+  /// inject their own.
+  CopySignalRepository? _repo;
 
   double get _stopPips => TradingMath.pipsBetween(
         widget.signal.pair,
@@ -58,6 +71,12 @@ class _CopyConfirmSheetState extends State<CopyConfirmSheet> {
         stop: widget.signal.stop,
         target: widget.signal.tp1,
       );
+
+  @override
+  void initState() {
+    super.initState();
+    _repo = ref.read(copySignalRepositoryProvider);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -201,7 +220,7 @@ class _CopyConfirmSheetState extends State<CopyConfirmSheet> {
                   child: ElevatedButton(
                     onPressed: _selectedIds.isEmpty || placeable.isEmpty
                         ? null
-                        : () => _confirm(context, placeable, accounts),
+                        : () => _confirm(),
                     child: const Text('Confirm Copy'),
                   ),
                 ),
@@ -294,42 +313,127 @@ class _CopyConfirmSheetState extends State<CopyConfirmSheet> {
   /// the exact lots the server also reports, so the trader reads WHY rather
   /// than a bare failure — a size the trader never reviewed is exactly the
   /// thing the cap exists to prevent.
-  String _refusalText(CopyPreview preview) => switch (preview.refusal!) {
-        CopyRefusal.inactiveSignal =>
-          'Signal is closed — only active signals can be copied.',
-        CopyRefusal.invalidSignal =>
-          'Stop distance is zero — this signal cannot be sized.',
-        CopyRefusal.maxLots =>
-          '${preview.lots.toStringAsFixed(2)} lots is over the '
-              '${CopySettings.defaultMaxLots.toStringAsFixed(2)}-lot cap — '
-              'reduce risk to copy this account.',
-      };
+    String _refusalText(CopyPreview preview) => switch (preview.refusal!) {
+    CopyRefusal.killSwitch =>
+      'Kill switch is on — nothing is copied today.',
+    CopyRefusal.consentRequired =>
+      'Live copies need stored consent — enable it in settings first.',
+    CopyRefusal.accountDisabled =>
+      'This account is not allowed to copy signals.',
+    CopyRefusal.accountMissing =>
+      'That account is not yours — it cannot be copied.',
+    CopyRefusal.maxConcurrent =>
+      'That account already has too many open follows.',
+    CopyRefusal.noMetaapiLink => 'That account has no MetaAPI link.',
+    CopyRefusal.inactiveSignal =>
+      'Signal is closed — only active signals can be copied.',
+    CopyRefusal.invalidSignal =>
+      'Stop distance is zero — this signal cannot be sized.',
+    CopyRefusal.maxLots =>
+      '${preview.lots.toStringAsFixed(2)} lots is over the '
+          '${CopySettings.defaultMaxLots.toStringAsFixed(2)}-lot cap — reduce risk to copy this account.',
+  };
 
-  void _confirm(
-    BuildContext context,
-    List<CopyPreview> placeable,
-    List<TradingAccount> accounts,
-  ) {
-    final Map<String, TradingAccount> byId = <String, TradingAccount>{
-      for (final TradingAccount a in accounts) a.id: a,
-    };
-    final String summary = placeable
-        .map(
-          (CopyPreview p) =>
-              '${byId[p.accountId]!.nickname} ${p.lots.toStringAsFixed(2)} lots',
-        )
-        .join(', ');
-    // Grab the messenger BEFORE the pop: the sheet's element is gone on the
-    // next frame, and resolving an inherited widget from a disposed context
-    // is the kind of bug that only shows up in release builds.
-    final ScaffoldMessengerState messenger = ScaffoldMessenger.of(context);
-    Navigator.of(context).pop();
-    messenger.showSnackBar(
-      SnackBar(
-        content: Text('Paper copy simulated: $summary. Nothing sent to a broker.'),
-      ),
-    );
+
+  /// Confirms the batch, then reports the server's own verdict: one row per
+  /// account, reasons named exactly as the server named them, paper rounds
+  /// always marked simulated. The sheet stays open while the request runs so
+  /// the trader hears every refusal as soon as it lands — and the numbers it
+  /// reports can never disagree with the preview, because the server
+  /// recomputes from live equity and re-checks every guardrail.
+  Future<void> _confirm() async {
+    try {
+      final CopySignalResult result = await _repo!.placeCopySignal(
+        signalId: widget.signal.id,
+        accountIds: List.unmodifiable(_selectedIds),
+        signalPair: widget.signal.pair,
+        stopPips: _stopPips,
+        riskPct: _riskPct,
+        mode: 'paper',
+      );
+      if (!mounted) return;
+      _result = result;
+      _finish(_batchText(ref));
+    } catch (error) {
+      if (!mounted) return;
+      _result = null;
+      _finish(_safeCopyError(error));
+    }
   }
+
+  /// Reports [message], then dismisses the sheet — in that order, so the
+  /// verdict outlives the route it was raised from.
+  void _finish(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message)),
+    );
+    Navigator.of(context).pop();
+  }
+
+  /// The server's verdict in one line: what was simulated and how much, what
+  /// was refused and why (the server's own refusal name), and the paper
+  /// honesty clause a simulated fill must always carry. Account ids become
+  /// nicknames here — a raw id in a toast tells a trader nothing.
+  String _batchText(WidgetRef ref) {
+    final CopySignalResult? result = _result;
+    if (result == null || result.results.isEmpty) {
+      return 'The copy service answered with no rows — nothing was copied. '
+          'Nothing sent to a broker.';
+    }
+    final List<TradingAccount> accounts = ref.read(accountsProvider);
+    String nameOf(String id) {
+      for (final TradingAccount a in accounts) {
+        if (a.id == id) return a.nickname;
+      }
+      return 'Selected account';
+    }
+
+    final List<String> placed = <String>[
+      for (final CopySignalRow row in result.results)
+        if (row.isPlaced)
+          '${nameOf(row.accountId)} ${row.lots.toStringAsFixed(2)} lots',
+    ];
+    final List<String> refused = <String>[
+      for (final CopySignalRow row in result.results)
+        if (row.isFailed)
+          '${nameOf(row.accountId)}: ${_serverRefusal(row.refusal)}',
+    ];
+
+    final String head = placed.isEmpty
+        ? 'Paper copy simulated nothing.'
+        : 'Paper copy simulated: ${placed.join(', ')}.';
+    final String tail = refused.isEmpty
+        ? 'Nothing sent to a broker.'
+        : 'Nothing sent to a broker. ${refused.join('; ')}.';
+    return '$head $tail';
+  }
+
+  /// A server refusal name, in words: the exact closed set from `shared.ts`,
+  /// mapped 1:1 through [CopyRefusal] so the toast can never reword what the
+  /// order side decided. A failed row with no name is a broker rejection
+  /// (live only) — reported as a failure, never as a success.
+  String _serverRefusal(String? refusal) {
+    final CopyRefusal? parsed = CopyRefusal.values.asNameMap()[refusal];
+    return switch (parsed) {
+      CopyRefusal.killSwitch => 'kill switch is on',
+      CopyRefusal.consentRequired => 'live copies need stored consent',
+      CopyRefusal.accountDisabled => 'copying is disabled for this account',
+      CopyRefusal.accountMissing => 'account not found',
+      CopyRefusal.maxConcurrent => 'too many open follows',
+      CopyRefusal.noMetaapiLink => 'no broker link',
+      CopyRefusal.inactiveSignal => 'signal is closed',
+      CopyRefusal.invalidSignal => 'signal cannot be sized',
+      CopyRefusal.maxLots => 'size is over the lot cap',
+      null => 'the order was not placed',
+    };
+  }
+
+  /// Failures reach the trader as [CopySignalFailure]'s own wording — never a
+  /// raw server string, which can name tables, columns or account ids.
+  String _safeCopyError(Object error) => error is CopySignalException
+      ? error.message
+      : CopySignalFailure.unreachable.message;
 
   Widget _row(String label, String value) => Padding(
         padding: const EdgeInsets.symmetric(vertical: 6),

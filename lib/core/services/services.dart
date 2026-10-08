@@ -10,10 +10,13 @@ import '../../features/replay/data/price_bar_repository.dart';
 import '../../features/replay/data/supabase_price_bar_repository.dart';
 import '../../features/signals/data/mock_signal_repository.dart';
 import '../../features/signals/data/signal_repository.dart';
+import '../../features/signals/data/supabase_signal_repository.dart';
 import '../../features/chart_analysis/data/chart_analysis_repository.dart';
 import '../../features/chart_analysis/data/mock_chart_analysis_repository.dart';
 import '../../features/chart_analysis/data/supabase_chart_analysis_repository.dart';
-import '../../features/signals/data/supabase_signal_repository.dart';
+import '../../features/signals/data/copy_signal_repository.dart';
+import '../../features/signals/data/mock_copy_signal_repository.dart';
+import '../../features/signals/data/supabase_copy_signal_repository.dart';
 import 'account_repository.dart';
 import 'auth_repository.dart';
 import 'broker_connect_service.dart';
@@ -85,6 +88,13 @@ class Services {
   late final ChartAnalysisRepository chartAnalysis = isMock
       ? MockChartAnalysisRepository()
       : SupabaseChartAnalysisRepository();
+
+  /// The `copy-signal` Edge Function (task 3.5). Paper only, and in mock
+  /// mode a deterministic stub answers with simulated fills — the confirm
+  /// sheet is fully exercisable with no backend and no credentials.
+  late final CopySignalRepository copySignal = isMock
+      ? MockCopySignalRepository()
+      : SupabaseCopySignalRepository();
 
   /// Registers a broker account with MetaAPI. Mock mode fabricates the id so the connect flow is
   /// usable before a `METAAPI_TOKEN` exists.

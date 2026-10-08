@@ -11,6 +11,14 @@ import '../../../core/utils/trading_math.dart';
 /// predicted here: the client does not hold those facts, and guessing them
 /// would let a preview disagree with the order that actually runs.
 enum CopyRefusal {
+  /// Server-side rules the client cannot predict. Mirrors shared.ts (lines 43-52)
+  /// and is mapped 1:1 in the sheet with `CopyRefusal.values.byName`.
+  killSwitch,
+  consentRequired,
+  accountDisabled,
+  accountMissing,
+  maxConcurrent,
+  noMetaapiLink,
   /// Signal not `active` (closed/cancelled) — mirrors `inactiveSignal`.
   inactiveSignal,
 

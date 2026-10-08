@@ -8,6 +8,7 @@ import '../replay/domain/price_series.dart';
 import '../replay/domain/price_series_request.dart';
 import '../replay/replay_providers.dart';
 import 'data/signal_repository.dart';
+import 'data/copy_signal_repository.dart';
 import 'domain/signal_stats.dart';
 import 'domain/volatility_score.dart';
 
@@ -89,6 +90,13 @@ final StateNotifierProvider<SignalFeedNotifier, SignalFeedState>
     StateNotifierProvider<SignalFeedNotifier, SignalFeedState>(
   (Ref ref) => SignalFeedNotifier(Services.instance.signals),
 );
+
+/// The copy-signal edge function, as a plain provider: the tree owns the
+/// implementation, and swapping it is what makes the confirm sheet testable.
+/// In mock mode [Services.instance.copySignal] answers with deterministic,
+/// simulated paper fills, so the sheet is fully exercisable with no backend.
+final Provider<CopySignalRepository> copySignalRepositoryProvider =
+    Provider<CopySignalRepository>((Ref ref) => Services.instance.copySignal);
 
 /// Verified stats over the loaded feed, derived once from the rows, with the
 /// volatility radar attached when market bars are in hand.
