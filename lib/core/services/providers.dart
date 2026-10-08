@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../models/account.dart';
+import '../models/copy_settings.dart';
 import '../models/guard_status.dart';
 import '../models/signal.dart';
 import '../models/trade.dart';
@@ -11,6 +12,7 @@ import '../../features/journal/domain/trade_metrics.dart';
 import '../../features/journal/domain/trade_review.dart';
 import 'account_repository.dart';
 import 'broker_connect_service.dart';
+import 'copy_settings_repository.dart';
 import 'guard_alert_monitor.dart';
 import 'mock_data.dart';
 import 'services.dart';
@@ -64,6 +66,11 @@ class AccountsNotifier extends StateNotifier<List<TradingAccount>> {
     await _repo.setEquityGuardEnabled(accountId, enabled);
     await refresh();
   }
+
+  Future<void> setCopyEnabled(String accountId, bool enabled) async {
+    await _repo.setCopyEnabled(accountId, enabled);
+    await refresh();
+  }
 }
 
 final StateNotifierProvider<AccountsNotifier, List<TradingAccount>> accountsProvider =
@@ -87,6 +94,82 @@ final Provider<TradingAccount?> selectedAccountProvider =
   }
   return accounts.first;
 });
+
+/// ---- Copy settings (task 3.6) ----
+///
+/// The trader's own `copy_settings` row: live consent, kill switch, max-lots
+/// cap, concurrent cap. [CopySettingsNotifier] mirrors [AccountsNotifier]'s
+/// shape (state = the row, `loadError` as a plain getter) with one deliberate
+/// difference: saves are PESSIMISTIC. [state] advances only after the row has
+/// been written, because every one of these values is a guardrail — a switch
+/// that read "kill switch ON" while the write was still in flight (or had
+/// failed) would be the app claiming a safety that does not exist server-side.
+/// The UI's Switch is bound to [state], so on a failed save it simply never
+/// moves, and the caller reports the failure.
+class CopySettingsNotifier extends StateNotifier<CopySettings> {
+  CopySettingsNotifier(this._repo) : super(CopySettings.defaults) {
+    unawaited(refresh());
+  }
+
+  final CopySettingsRepository _repo;
+
+  /// Non-null when the last LOAD failed. State then still holds whatever it
+  /// held before (defaults on first load), and the Settings screen says so —
+  /// showing defaults silently would read as "kill switch is OFF" when the
+  /// stored row might say otherwise.
+  Object? _loadError;
+  Object? get loadError => _loadError;
+
+  /// True while a save is in flight. Handlers check it before starting so two
+  /// rapid taps cannot race two upserts of the same row.
+  bool _saving = false;
+  bool get saving => _saving;
+
+  Future<void> refresh() async {
+    try {
+      state = await _repo.fetchCopySettings();
+      _loadError = null;
+    } catch (e) {
+      _loadError = e;
+    }
+  }
+
+  /// Writes [next] first and adopts it only on success. Returns whether the
+  /// row now holds [next]; the raw error never leaves this method — the sheet
+  /// and Settings screen phrase failures in their own words.
+  Future<bool> _save(CopySettings next) async {
+    if (_saving) return false;
+    _saving = true;
+    try {
+      await _repo.saveCopySettings(next);
+      state = next;
+      _loadError = null;
+      return true;
+    } catch (_) {
+      return false;
+    } finally {
+      _saving = false;
+    }
+  }
+
+  Future<bool> setKillSwitch(bool value) =>
+      _save(state.copyWith(killSwitch: value));
+
+  Future<bool> setLiveConsent(bool value) =>
+      _save(state.copyWith(liveConsent: value));
+
+  Future<bool> setMaxLots(double value) =>
+      _save(state.copyWith(maxLots: value));
+
+  Future<bool> setMaxConcurrentFollows(int value) =>
+      _save(state.copyWith(maxConcurrentFollows: value));
+}
+
+final StateNotifierProvider<CopySettingsNotifier, CopySettings>
+copySettingsProvider =
+    StateNotifierProvider<CopySettingsNotifier, CopySettings>(
+  (Ref ref) => CopySettingsNotifier(Services.instance.copySettings),
+);
 
 /// ---- Broker connect ----
 

@@ -46,15 +46,29 @@ class CopySettings {
   final int maxConcurrentFollows;
 
   /// A `copy_settings` row, or the defaults when the row (or any field) is
-  /// absent — the same fallback index.ts applies server-side.
+  /// absent — the same fallback index.ts applies server-side. Non-positive or
+  /// non-finite caps fall back too: the server refuses to use them
+  /// (`Number(s.max_lots) > 0 ? ... : DEFAULT_SETTINGS`), so a client that
+  /// read them literally would preview `maxLots` refusals the server never
+  /// issues. Matching the fallback keeps preview and placement on one value.
   factory CopySettings.fromJson(Map<String, dynamic> json) => CopySettings(
-        liveConsent: json['live_consent'] as bool? ?? defaultLiveConsent,
-        killSwitch: json['kill_switch'] as bool? ?? defaultKillSwitch,
-        maxLots: (json['max_lots'] as num?)?.toDouble() ?? defaultMaxLots,
+        liveConsent: json['live_consent'] == true,
+        killSwitch: json['kill_switch'] == true,
+        maxLots: _positiveOr(json['max_lots'] as num?, defaultMaxLots),
         maxConcurrentFollows:
-            (json['max_concurrent_follows'] as num?)?.toInt() ??
-                defaultMaxConcurrentFollows,
+            _positiveIntOr(json['max_concurrent_follows'] as num?,
+                defaultMaxConcurrentFollows,), 
       );
+
+  static double _positiveOr(num? v, double fallback) {
+    final double? d = v?.toDouble();
+    return d != null && d.isFinite && d > 0 ? d : fallback;
+  }
+
+  static int _positiveIntOr(num? v, int fallback) {
+    final double? d = v?.toDouble();
+    return d != null && d.isFinite && d > 0 ? d.round() : fallback;
+  }
 
   Map<String, dynamic> toJson() => <String, dynamic>{
         'live_consent': liveConsent,
@@ -62,6 +76,40 @@ class CopySettings {
         'max_lots': maxLots,
         'max_concurrent_follows': maxConcurrentFollows,
       };
+
+  /// The same row with one field changed — how the settings screen edits a
+  /// single guardrail without ever constructing a half-filled row.
+  CopySettings copyWith({
+    bool? liveConsent,
+    bool? killSwitch,
+    double? maxLots,
+    int? maxConcurrentFollows,
+  }) =>
+      CopySettings(
+        liveConsent: liveConsent ?? this.liveConsent,
+        killSwitch: killSwitch ?? this.killSwitch,
+        maxLots: maxLots ?? this.maxLots,
+        maxConcurrentFollows: maxConcurrentFollows ?? this.maxConcurrentFollows,
+      );
+
+  /// Validation for the editable caps, mirroring the server's own acceptance
+  /// rule (`index.ts`: a value is used only when it is finite and `> 0`,
+  /// otherwise `DEFAULT_SETTINGS` answers). The client refuses to WRITE a
+  /// value the server would throw away, so a saved cap is always the stored
+  /// cap — no silent fallback to 5.0 behind the trader's back.
+  /// [isValidMaxConcurrentFollows] additionally requires a whole number,
+  /// because the `max_concurrent_follows` column is an `int`.
+  static bool isValidMaxLots(num? v) =>
+      v != null && v.isFinite && v > 0 && v <= maxLotsCeiling;
+
+  static bool isValidMaxConcurrentFollows(num? v) =>
+      v != null && v.isFinite && v > 0 && v == v.roundToDouble();
+
+  /// UI ceiling for the lot cap. The server accepts any positive number, but
+  /// a cap this high can never bind on any account a retail trader is likely
+  /// to connect, so the band exists purely to catch a fat-fingered zero or a
+  /// stray decimal — it is an input guard, not a policy.
+  static const double maxLotsCeiling = 100.0;
 
   /// Finite-or-default, clamped into [minRiskPct, maxRiskPct], 2dp — the
   /// shape of `clampRiskPct` in shared.ts. Dart inputs are typed (`num?`),

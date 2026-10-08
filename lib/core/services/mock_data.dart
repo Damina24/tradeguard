@@ -25,6 +25,11 @@ class MockData {
         peakEquity: 105200,
         propFirm: 'FTMO',
         equityGuardEnabled: false,
+        // Demo accounts arrive with copying already switched ON, so the copy
+        // sheet is exercisable out of the box. A *freshly connected* account
+        // keeps the column default (false) and must be enabled in Settings —
+        // see MockAccountRepository / migration 0009.
+        copyEnabled: true,
       );
 
   static TradingAccount fundedAccount() => const TradingAccount(
@@ -44,6 +49,7 @@ class MockData {
         peakEquity: 52100,
         propFirm: 'FTMO',
         equityGuardEnabled: true,
+        copyEnabled: true,
       );
 
   static List<TradingAccount> accounts() =>

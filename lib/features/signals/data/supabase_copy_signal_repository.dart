@@ -94,6 +94,21 @@ class SupabaseCopySignalRepository implements CopySignalRepository {
     }
   }
 
+  @override
+  Future<int> countOpenFollows() async {
+    // Exact count of the caller's open follows. RLS `own follows` scopes the
+    // rows the same way index.ts scopes them by verified JWT user id, and
+    // `count` respects the filters while ignoring modifiers, so the number is
+    // the same one evaluateAccount receives server-side.
+    final dynamic res = await _service.client
+        .from('signal_follows')
+        .select('id')
+        .inFilter('copy_status', <String>['pending', 'placed'])
+        .count(CountOption.exact);
+    final int? count = res.count as int?;
+    return count ?? 0;
+  }
+
   /// Translates the Edge Function's batch-level `error` string into a
   /// trader-safe failure. Every known batch error is sent with a non-2xx
   /// status, so [FunctionsHttpException] + [_classify] normally answer first;

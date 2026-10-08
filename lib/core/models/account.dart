@@ -29,6 +29,7 @@ class TradingAccount {
     this.propFirm,
     this.metaapiAccountId,
     this.equityGuardEnabled = false,
+    this.copyEnabled = false,
   });
 
   final String id;
@@ -51,6 +52,14 @@ class TradingAccount {
   /// this id travels, and every broker call is proxied through an Edge Function.
   final String? metaapiAccountId;
   final bool equityGuardEnabled;
+
+  /// Per-account copy permission (`broker_accounts.copy_enabled`, migration
+  /// 0009). OFF by default — exactly the column default — so a freshly
+  /// connected account refuses every follow (`accountDisabled`) until the
+  /// trader turns it on in Settings. The server re-reads this column on every
+  /// request; the client holds it only so the preview can say why before the
+  /// round trip.
+  final bool copyEnabled;
 
   factory TradingAccount.fromJson(Map<String, dynamic> json) => TradingAccount(
         id: json['id'] as String,
@@ -75,6 +84,7 @@ class TradingAccount {
         propFirm: json['prop_firm'] as String?,
         metaapiAccountId: json['metaapi_account_id'] as String?,
         equityGuardEnabled: json['equity_guard_enabled'] as bool? ?? false,
+        copyEnabled: json['copy_enabled'] as bool? ?? false,
       );
 
   Map<String, dynamic> toJson() => <String, dynamic>{
@@ -95,5 +105,6 @@ class TradingAccount {
         'prop_firm': propFirm,
         'metaapi_account_id': metaapiAccountId,
         'equity_guard_enabled': equityGuardEnabled,
+        'copy_enabled': copyEnabled,
       };
 }

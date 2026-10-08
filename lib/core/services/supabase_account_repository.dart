@@ -84,6 +84,16 @@ class SupabaseAccountRepository implements AccountRepository {
         .eq('id', accountId);
   }
 
+  @override
+  Future<void> setCopyEnabled(String accountId, bool enabled) async {
+    // RLS `own accounts` scopes the update to the caller's row, so a foreign
+    // id matches zero rows rather than touching somebody else's permission.
+    await _client
+        .from('broker_accounts')
+        .update(<String, dynamic>{'copy_enabled': enabled})
+        .eq('id', accountId);
+  }
+
   /// Latest snapshot per account. `equity_snapshots` is append-only and written once a minute, so
   /// descending order means the first row seen for an account is its newest one.
   Future<Map<String, AccountSnapshot>> _latestSnapshots() async {
@@ -122,6 +132,7 @@ class SupabaseAccountRepository implements AccountRepository {
         'max_drawdown': a.maxDrawdown,
         'drawdown_type': a.drawdownType.name,
         'equity_guard_enabled': a.equityGuardEnabled,
+        'copy_enabled': a.copyEnabled,
         'is_active': true,
       };
 

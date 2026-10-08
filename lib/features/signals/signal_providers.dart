@@ -98,6 +98,17 @@ final StateNotifierProvider<SignalFeedNotifier, SignalFeedState>
 final Provider<CopySignalRepository> copySignalRepositoryProvider =
     Provider<CopySignalRepository>((Ref ref) => Services.instance.copySignal);
 
+/// Open follows for the concurrent cap (task 3.6): the count
+/// `evaluateAccount` receives as `openFollows`. Fetched fresh when the copy
+/// sheet opens and invalidated after every placed batch, so the preview
+/// counts the rows the last confirm actually added. A load failure answers
+/// `0` (`.valueOrNull ?? 0`) rather than blocking the sheet: an unknown count
+/// costs one client-side prediction, while the server recounts at request
+/// time and its refusal still arrives by name in the toast.
+final FutureProvider<int> openFollowsProvider = FutureProvider<int>(
+  (Ref ref) => ref.watch(copySignalRepositoryProvider).countOpenFollows(),
+);
+
 /// Verified stats over the loaded feed, derived once from the rows, with the
 /// volatility radar attached when market bars are in hand.
 ///

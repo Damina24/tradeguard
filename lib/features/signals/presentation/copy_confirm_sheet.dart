@@ -83,6 +83,13 @@ class _CopyConfirmSheetState extends ConsumerState<CopyConfirmSheet> {
     return Consumer(
       builder: (BuildContext context, WidgetRef ref, Widget? child) {
         final List<TradingAccount> accounts = ref.watch(accountsProvider);
+        // The trader's stored guardrails and the open-follow count drive the
+        // preview (task 3.6): the kill switch, the caps and the per-account
+        // permission are named before the round trip — the server still
+        // re-runs every one of them.
+        final CopySettings settings = ref.watch(copySettingsProvider);
+        final int openFollows =
+            ref.watch(openFollowsProvider).valueOrNull ?? 0;
         if (accounts.isEmpty) {
           return const Padding(
             padding: EdgeInsets.all(24),
@@ -111,6 +118,8 @@ class _CopyConfirmSheetState extends ConsumerState<CopyConfirmSheet> {
               signal: widget.signal,
               account: a,
               riskPct: _riskPct,
+              settings: settings,
+              openFollows: openFollows,
             ),
         };
         final List<CopyPreview> placeable = <CopyPreview>[
@@ -192,7 +201,7 @@ class _CopyConfirmSheetState extends ConsumerState<CopyConfirmSheet> {
                   style: AppTextStyles.label,
                 ),
                 for (final TradingAccount a in accounts)
-                  _accountRow(a, previews[a.id]!),
+                  _accountRow(a, previews[a.id]!, settings),
                 if (_selectedIds.isEmpty)
                   const Text(
                     'Select at least one account to copy.',
@@ -200,7 +209,7 @@ class _CopyConfirmSheetState extends ConsumerState<CopyConfirmSheet> {
                   )
                 else if (placeable.isEmpty)
                   Text(
-                    'Selected accounts cannot be copied at this size — see '
+                    'Selected accounts cannot be copied right now — see '
                     'the reasons above.',
                     style:
                         AppTextStyles.muted.copyWith(color: AppColors.danger),
@@ -241,7 +250,11 @@ class _CopyConfirmSheetState extends ConsumerState<CopyConfirmSheet> {
   /// its loss at the stop on the right, the refusal reason (if any) below.
   /// Rows are previewed whether checked or not, so the trader can compare
   /// sizes across accounts before choosing.
-  Widget _accountRow(TradingAccount account, CopyPreview preview) {
+  Widget _accountRow(
+    TradingAccount account,
+    CopyPreview preview,
+    CopySettings settings,
+  ) {
     return CheckboxListTile(
       value: _selectedIds.contains(account.id),
       onChanged: (bool? checked) => _toggle(account.id, checked),
@@ -280,7 +293,7 @@ class _CopyConfirmSheetState extends ConsumerState<CopyConfirmSheet> {
       subtitle: preview.refusal == null
           ? null
           : Text(
-              _refusalText(preview),
+              _refusalText(preview, settings),
               style: AppTextStyles.muted.copyWith(color: AppColors.danger),
             ),
     );
@@ -313,26 +326,29 @@ class _CopyConfirmSheetState extends ConsumerState<CopyConfirmSheet> {
   /// the exact lots the server also reports, so the trader reads WHY rather
   /// than a bare failure — a size the trader never reviewed is exactly the
   /// thing the cap exists to prevent.
-    String _refusalText(CopyPreview preview) => switch (preview.refusal!) {
-    CopyRefusal.killSwitch =>
-      'Kill switch is on — nothing is copied today.',
-    CopyRefusal.consentRequired =>
-      'Live copies need stored consent — enable it in settings first.',
-    CopyRefusal.accountDisabled =>
-      'This account is not allowed to copy signals.',
-    CopyRefusal.accountMissing =>
-      'That account is not yours — it cannot be copied.',
-    CopyRefusal.maxConcurrent =>
-      'That account already has too many open follows.',
-    CopyRefusal.noMetaapiLink => 'That account has no MetaAPI link.',
-    CopyRefusal.inactiveSignal =>
-      'Signal is closed — only active signals can be copied.',
-    CopyRefusal.invalidSignal =>
-      'Stop distance is zero — this signal cannot be sized.',
-    CopyRefusal.maxLots =>
-      '${preview.lots.toStringAsFixed(2)} lots is over the '
-          '${CopySettings.defaultMaxLots.toStringAsFixed(2)}-lot cap — reduce risk to copy this account.',
-  };
+  String _refusalText(CopyPreview preview, CopySettings settings) {
+    switch (preview.refusal!) {
+      case CopyRefusal.killSwitch:
+        return 'Kill switch is on — nothing is copied today.';
+      case CopyRefusal.consentRequired:
+        return 'Live copies need stored consent — enable it in settings first.';
+      case CopyRefusal.accountDisabled:
+        return 'This account is not allowed to copy signals.';
+      case CopyRefusal.accountMissing:
+        return 'That account is not yours — it cannot be copied.';
+      case CopyRefusal.maxConcurrent:
+        return 'That account already has too many open follows.';
+      case CopyRefusal.noMetaapiLink:
+        return 'That account has no MetaAPI link.';
+      case CopyRefusal.inactiveSignal:
+        return 'Signal is closed — only active signals can be copied.';
+      case CopyRefusal.invalidSignal:
+        return 'Stop distance is zero — this signal cannot be sized.';
+      case CopyRefusal.maxLots:
+        return '${preview.lots.toStringAsFixed(2)} lots is over the '
+            '${settings.maxLots.toStringAsFixed(2)}-lot cap — reduce risk to copy this account.';
+    }
+  }
 
 
   /// Confirms the batch, then reports the server's own verdict: one row per

@@ -41,6 +41,12 @@ abstract class AccountRepository {
   Future<void> deleteAccount(String accountId);
 
   Future<void> setEquityGuardEnabled(String accountId, bool enabled);
+
+  /// Per-account copy permission (`broker_accounts.copy_enabled`, task 3.6).
+  /// OFF by default: `evaluateAccount` refuses `accountDisabled` until the
+  /// owner turns it on, so this switch is the only thing standing between a
+  /// freshly connected account and a placed follow.
+  Future<void> setCopyEnabled(String accountId, bool enabled);
 }
 
 /// In-memory accounts used in mock mode. Starts from the seeded demo accounts so the UI is
@@ -84,6 +90,13 @@ class MockAccountRepository implements AccountRepository {
     _accounts[i] = _copyWith(_accounts[i], equityGuardEnabled: enabled);
   }
 
+  @override
+  Future<void> setCopyEnabled(String accountId, bool enabled) async {
+    final int i = _indexOf(accountId);
+    if (i < 0) throw StateError('Unknown account: $accountId');
+    _accounts[i] = _copyWith(_accounts[i], copyEnabled: enabled);
+  }
+
   TradingAccount? _byId(String id) {
     final int i = _indexOf(id);
     return i < 0 ? null : _accounts[i];
@@ -92,9 +105,15 @@ class MockAccountRepository implements AccountRepository {
   int _indexOf(String id) =>
       _accounts.indexWhere((TradingAccount a) => a.id == id);
 
+  /// Field-preserving copy. Every field must be carried explicitly: an
+  /// omitted one would silently reset (this is also where a prior version
+  /// dropped `metaapiAccountId`, unlinking the broker on every toggle — the
+  /// copy toggle and the guard toggle share this path, so it is preserved
+  /// here along with [copyEnabled]).
   static TradingAccount _copyWith(
     TradingAccount a, {
     bool? equityGuardEnabled,
+    bool? copyEnabled,
   }) =>
       TradingAccount(
         id: a.id,
@@ -112,6 +131,8 @@ class MockAccountRepository implements AccountRepository {
         dailyPnl: a.dailyPnl,
         peakEquity: a.peakEquity,
         propFirm: a.propFirm,
+        metaapiAccountId: a.metaapiAccountId,
         equityGuardEnabled: equityGuardEnabled ?? a.equityGuardEnabled,
+        copyEnabled: copyEnabled ?? a.copyEnabled,
       );
 }

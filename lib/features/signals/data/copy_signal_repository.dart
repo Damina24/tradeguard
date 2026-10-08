@@ -33,4 +33,13 @@ abstract class CopySignalRepository {
     required double riskPct,
     required String mode,
   });
+
+  /// How many follows are currently open for this trader — the count
+  /// `index.ts` feeds to `evaluateAccount` as `openFollows` (`signal_follows`
+  /// where `copy_status` is `pending` or `placed`, scoped to the caller: the
+  /// server filters by the verified JWT's user id, the client by RLS `own
+  /// follows` — same rows). The preview needs it to predict `maxConcurrent`
+  /// before the round trip; the server still recounts at request time, so a
+  /// stale count can only cost a preview, never a placement.
+  Future<int> countOpenFollows();
 }

@@ -163,7 +163,7 @@ void main() {
         findsOneWidget,
       );
       expect(
-        find.textContaining('cannot be copied at this size'),
+        find.textContaining('cannot be copied right now'),
         findsOneWidget,
       );
       expect(
@@ -254,6 +254,9 @@ class _EmptyAccounts implements AccountRepository {
 
   @override
   Future<void> setEquityGuardEnabled(String accountId, bool enabled) async {}
+
+  @override
+  Future<void> setCopyEnabled(String accountId, bool enabled) async {}
 }
 
 

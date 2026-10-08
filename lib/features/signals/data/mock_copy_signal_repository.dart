@@ -20,6 +20,13 @@ class MockCopySignalRepository implements CopySignalRepository {
 
   final Map<String, double> _equity;
 
+  /// The demo has no `signal_follows` table, so this in-memory count stands
+  /// in for it: every row this stub places increments it, exactly as
+  /// `index.ts` does after each placed follow (paper included), which is what
+  /// makes the concurrent cap reachable in mock mode instead of dead
+  /// configuration.
+  int _openFollows = 0;
+
   static Map<String, double> _seedEquity(Map<String, double>? overrides) {
     final Map<String, double> equity = <String, double>{
       'acc_eval_100k': 103450,
@@ -59,9 +66,13 @@ class MockCopySignalRepository implements CopySignalRepository {
           simulated: true,
         ),
       );
+      _openFollows++;
     }
     return Future.value(
       CopySignalResult(ok: true, mode: 'paper', results: results),
     );
   }
+
+  @override
+  Future<int> countOpenFollows() async => _openFollows;
 }

@@ -43,6 +43,11 @@ void main() {
         balance: equity,
         dailyPnl: 0,
         peakEquity: equity,
+        // Healthy means copyable: mirrors copy_signal_test.ts account() which
+        // sets copyEnabled: true. The model default is false (migration 0009
+        // column default), so omitting this would make every "healthy" fixture
+        // refuse as accountDisabled before sizing is ever reached.
+        copyEnabled: true,
       );
 
   // ── Parity fixtures — IDENTICAL table in copy_signal_test.ts ─────────────

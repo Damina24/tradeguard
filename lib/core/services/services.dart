@@ -20,10 +20,12 @@ import '../../features/signals/data/supabase_copy_signal_repository.dart';
 import 'account_repository.dart';
 import 'auth_repository.dart';
 import 'broker_connect_service.dart';
+import 'copy_settings_repository.dart';
 import 'fcm_push_service.dart';
 import 'push_service.dart';
 import 'supabase_account_repository.dart';
 import 'supabase_auth_repository.dart';
+import 'supabase_copy_settings_repository.dart';
 import 'supabase_service.dart';
 import 'supabase_trade_repository.dart';
 import 'trade_repository.dart';
@@ -95,6 +97,15 @@ class Services {
   late final CopySignalRepository copySignal = isMock
       ? MockCopySignalRepository()
       : SupabaseCopySignalRepository();
+
+  /// The trader's `copy_settings` row (task 3.6): live consent, kill switch,
+  /// max-lots cap and concurrent cap. Mock mode keeps the row in memory, so
+  /// every guardrail surface in Settings is fully exercisable with no backend
+  /// and no credentials — and an absent row answers with the same defaults
+  /// the Edge Function falls back to.
+  late final CopySettingsRepository copySettings = isMock
+      ? MockCopySettingsRepository()
+      : SupabaseCopySettingsRepository();
 
   /// Registers a broker account with MetaAPI. Mock mode fabricates the id so the connect flow is
   /// usable before a `METAAPI_TOKEN` exists.
