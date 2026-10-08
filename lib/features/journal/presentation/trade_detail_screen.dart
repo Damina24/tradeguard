@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -8,6 +10,7 @@ import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_text_styles.dart';
 import '../../../core/utils/formatters.dart';
 import '../../ai_review/widgets/ai_review_card.dart';
+import '../data/trade_screenshot_service.dart';
 import '../domain/trade_grade.dart';
 import '../domain/trade_metrics.dart';
 import '../domain/trade_review.dart';
@@ -63,6 +66,10 @@ class TradeDetailScreen extends ConsumerWidget {
           const Text('GRADE', style: AppTextStyles.label),
           const SizedBox(height: 8),
           _GradeSelector(trade: trade, derived: review.grade),
+          const SizedBox(height: 20),
+          const Text('SCREENSHOT', style: AppTextStyles.label),
+          const SizedBox(height: 8),
+          _ScreenshotCard(trade: trade),
           const SizedBox(height: 20),
           // Task 2.5 — the AI Review card, placed after the deterministic checklist and grade so
           // the trader reads our own verdict first and the model's opinion second. Presenting the
@@ -312,6 +319,207 @@ class _ReviewCard extends StatelessWidget {
           Text(review.grade.description, style: AppTextStyles.disclaimer),
         ],
       ),
+    );
+  }
+}
+
+/// The trade screenshot: pick from gallery → upload to the private bucket →
+/// link the path → display the bytes. Keeps its own upload/error state; the
+/// trade row itself is the source of truth for the linked path.
+class _ScreenshotCard extends ConsumerStatefulWidget {
+  const _ScreenshotCard({required this.trade});
+
+  final Trade trade;
+
+  @override
+  ConsumerState<_ScreenshotCard> createState() => _ScreenshotCardState();
+}
+
+class _ScreenshotCardState extends ConsumerState<_ScreenshotCard> {
+  bool _uploading = false;
+  String? _error;
+
+  Future<void> _pickAndUpload() async {
+    final TradeScreenshotService screenshots =
+        ref.read(tradeScreenshotServiceProvider);
+    PickedScreenshot? picked;
+    try {
+      picked = await screenshots.pickFromGallery();
+    } on TradeScreenshotFailure catch (e) {
+      if (!mounted) return;
+      setState(() => _error = e.message);
+      return;
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _error = 'Could not open the gallery. Try again.');
+      return;
+    }
+    // Gallery dismissed — not an error.
+    if (picked == null) return;
+    if (!mounted) return;
+    setState(() {
+      _uploading = true;
+      _error = null;
+    });
+    try {
+      await ref
+          .read(tradesProvider.notifier)
+          .uploadScreenshot(widget.trade.id, picked);
+    } on TradeScreenshotFailure catch (e) {
+      if (!mounted) return;
+      setState(() => _error = e.message);
+    } catch (_) {
+      if (!mounted) return;
+      // Never surface a raw platform/storage string — it can quote paths.
+      setState(() => _error = 'Could not upload that image. Try again.');
+    } finally {
+      if (mounted) setState(() => _uploading = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final String? path = widget.trade.screenshotUrl;
+    return _Card(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          if (path == null || path.isEmpty)
+            _EmptyScreenshot(uploading: _uploading, onUpload: _pickAndUpload)
+          else
+            _ScreenshotImage(
+              path: path,
+              uploading: _uploading,
+              onReplace: _pickAndUpload,
+            ),
+          if (_uploading) ...<Widget>[
+            const SizedBox(height: 12),
+            const LinearProgressIndicator(minHeight: 4),
+            const SizedBox(height: 6),
+            const Text('Uploading…', style: AppTextStyles.muted),
+          ],
+          if (_error != null) ...<Widget>[
+            const SizedBox(height: 8),
+            Text(_error!, style: AppTextStyles.body),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+/// No screenshot linked yet.
+class _EmptyScreenshot extends StatelessWidget {
+  const _EmptyScreenshot({required this.uploading, required this.onUpload});
+
+  final bool uploading;
+  final VoidCallback onUpload;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        const Text(
+          'No screenshot yet. Attach the chart you traded.',
+          style: AppTextStyles.muted,
+        ),
+        const SizedBox(height: 12),
+        OutlinedButton.icon(
+          onPressed: uploading ? null : onUpload,
+          icon: const Icon(Icons.upload, size: 16),
+          label: const Text('Upload screenshot'),
+        ),
+      ],
+    );
+  }
+}
+
+/// The linked screenshot, downloaded as bytes with the caller's session.
+///
+/// The bucket is private, so an `Image.network` URL cannot work here: the
+/// stored value is a storage PATH, and only an authorised client can read it.
+class _ScreenshotImage extends ConsumerWidget {
+  const _ScreenshotImage({
+    required this.path,
+    required this.uploading,
+    required this.onReplace,
+  });
+
+  final String path;
+  final bool uploading;
+  final VoidCallback onReplace;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    // The bytes provider below is keyed on the linked path, so a re-upload
+    // (new path) loads the new bytes without ever showing the old ones.
+    final AsyncValue<Uint8List?> bytes =
+        ref.watch(tradeScreenshotBytesProvider(path));
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        ClipRRect(
+          borderRadius: BorderRadius.circular(12),
+          child: bytes.when(
+            loading: () => const SizedBox(
+              height: 180,
+              child: Center(
+                child: SizedBox(
+                  width: 22,
+                  height: 22,
+                  child: CircularProgressIndicator(),
+                ),
+              ),
+            ),
+            error: (_, __) => const SizedBox(
+              height: 120,
+              child: Center(
+                child: Text(
+                  'Could not load that screenshot.',
+                  style: AppTextStyles.muted,
+                  textAlign: TextAlign.center,
+                ),
+              ),
+            ),
+            data: (Uint8List? data) {
+              if (data == null) {
+                return const SizedBox(
+                  height: 120,
+                  child: Center(
+                    child: Text(
+                      'Could not load that screenshot.',
+                      style: AppTextStyles.muted,
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
+                );
+              }
+              return Image.memory(
+                data,
+                fit: BoxFit.contain,
+                semanticLabel: 'Trade screenshot',
+                errorBuilder: (_, __, ___) => const SizedBox(
+                  height: 120,
+                  child: Center(
+                    child: Text(
+                      'Could not display that screenshot.',
+                      style: AppTextStyles.muted,
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+        const SizedBox(height: 12),
+        OutlinedButton.icon(
+          onPressed: uploading ? null : onReplace,
+          icon: const Icon(Icons.refresh, size: 16),
+          label: const Text('Replace screenshot'),
+        ),
+      ],
     );
   }
 }

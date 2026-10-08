@@ -14,6 +14,7 @@ import '../../features/signals/data/supabase_signal_repository.dart';
 import '../../features/chart_analysis/data/chart_analysis_repository.dart';
 import '../../features/chart_analysis/data/mock_chart_analysis_repository.dart';
 import '../../features/chart_analysis/data/supabase_chart_analysis_repository.dart';
+import '../../features/journal/data/trade_screenshot_service.dart';
 import '../../features/signals/data/copy_signal_repository.dart';
 import '../../features/signals/data/mock_copy_signal_repository.dart';
 import '../../features/signals/data/supabase_copy_signal_repository.dart';
@@ -29,6 +30,8 @@ import 'supabase_copy_settings_repository.dart';
 import 'supabase_service.dart';
 import 'supabase_trade_repository.dart';
 import 'trade_repository.dart';
+
+import '../../features/paywall/data/purchase_repository.dart';
 
 /// Single place that decides whether the app talks to Supabase or to the in-memory mocks.
 ///
@@ -53,6 +56,12 @@ class Services {
   late final TradeRepository trades = isMock
       ? MockTradeRepository()
       : SupabaseTradeRepository();
+
+  /// Trade screenshots (task 2.3). Mock mode keeps bytes in memory, so the
+  /// upload → link → display flow is fully exercisable with no backend.
+  late final TradeScreenshotService screenshots = isMock
+      ? MockTradeScreenshotService()
+      : SupabaseTradeScreenshotService();
 
   /// `v_patterns` rows for the signed-in trader. Mock mode returns the same
   /// pre-grouped fixture shape the live view returns, so the pattern views and
@@ -106,6 +115,14 @@ class Services {
   late final CopySettingsRepository copySettings = isMock
       ? MockCopySettingsRepository()
       : SupabaseCopySettingsRepository();
+
+  /// Live vs. mock store purchase repository. Not configured when no store keys
+  /// are present, so an unconfigured build (or mock mode) never needs a store
+  /// key and never touches the store SDK.
+  late final PurchaseRepository purchases = isMock
+      ? MockPurchaseRepository()
+      : RevenueCatPurchaseRepository();
+
 
   /// Registers a broker account with MetaAPI. Mock mode fabricates the id so the connect flow is
   /// usable before a `METAAPI_TOKEN` exists.

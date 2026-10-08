@@ -4,8 +4,10 @@ import 'package:go_router/go_router.dart';
 
 import '../../../core/constants/app_strings.dart';
 import '../../../core/models/signal.dart';
+import '../../../core/services/providers.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_text_styles.dart';
+import '../../paywall/presentation/paywall_screen.dart';
 import '../domain/signal_stats.dart';
 import '../signal_providers.dart';
 import '../widgets/signal_card.dart';
@@ -33,6 +35,11 @@ class SignalsScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final SignalFeedState feed = ref.watch(signalFeedProvider);
+    // Prime the Pro gate: the notifier is lazy, so reading it here (rather than
+    // only in the tap handler below) starts its entitlement sync when the screen
+    // loads. Without this, the first tap would read a not-yet-synced isPro=false
+    // and wrongly show the paywall to a Pro trader.
+    ref.watch(purchasesProvider);
 
     return Scaffold(
       appBar: AppBar(
@@ -50,7 +57,23 @@ class SignalsScreen extends ConsumerWidget {
           ElevatedButton.icon(
             // Task 3.3 shipped the screen; the button that still announced
             // "unlocks in Phase 3" was a stale claim, not a plan.
-            onPressed: () => context.push('/tools/chart-analysis'),
+            onPressed: () {
+              // Gate: AI Chart Analysis requires Pro.
+              if (!ref.read(purchasesProvider).isPro) {
+                showModalBottomSheet<void>(
+                  context: context,
+                  isScrollControlled: true,
+                  backgroundColor: AppColors.surface,
+                  shape: const RoundedRectangleBorder(
+                    borderRadius:
+                        BorderRadius.vertical(top: Radius.circular(20)),
+                  ),
+                  builder: (_) => const PaywallScreen(),
+                );
+                return;
+              }
+              context.push('/tools/chart-analysis');
+            },
             style: ElevatedButton.styleFrom(
               backgroundColor: AppColors.accent,
               foregroundColor: Colors.white,

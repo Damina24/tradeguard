@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -5,6 +7,7 @@ import 'package:tradeguard/core/models/trade.dart';
 import 'package:tradeguard/core/services/account_repository.dart';
 import 'package:tradeguard/core/services/providers.dart';
 import 'package:tradeguard/core/services/trade_repository.dart';
+import 'package:tradeguard/features/journal/data/trade_screenshot_service.dart';
 import 'package:tradeguard/features/journal/domain/trade_metrics.dart';
 import 'package:tradeguard/features/journal/domain/trade_review.dart';
 import 'package:tradeguard/features/journal/presentation/journal_screen.dart';
@@ -25,6 +28,7 @@ Trade trade({
   double commission = -1,
   double swap = -1,
   String? grade,
+  String? screenshotUrl,
   bool sparse = false,
 }) =>
     Trade(
@@ -41,18 +45,29 @@ Trade trade({
       commission: commission,
       swap: swap,
       grade: grade,
+      screenshotUrl: screenshotUrl,
       openTime: sparse ? null : DateTime.utc(2026, 4, 15, 8),
       closeTime: sparse ? null : DateTime.utc(2026, 4, 15, 12),
       currency: sparse ? null : 'USD',
     );
 
 /// Wraps a screen with the trades under test.
-Widget _app(Widget child, {List<Trade>? trades, Object? error}) {
+Widget _app(
+  Widget child, {
+  List<Trade>? trades,
+  Object? error,
+  TradeScreenshotService? screenshots,
+}) {
   return ProviderScope(
     overrides: <Override>[
       tradesProvider.overrideWith(
-        (Ref ref) => TradesNotifier(_FakeTradeRepository(trades, error)),
+        (Ref ref) => TradesNotifier(
+          _FakeTradeRepository(trades, error),
+          screenshots: screenshots,
+        ),
       ),
+      if (screenshots != null)
+        tradeScreenshotServiceProvider.overrideWithValue(screenshots),
     ],
     child: MaterialApp(home: child),
   );
@@ -84,6 +99,9 @@ class _FakeTradeRepository implements TradeRepository {
 
   @override
   Future<void> updateNotes(String tradeId, String notes) async {}
+
+  @override
+  Future<void> updateScreenshot(String tradeId, String screenshotPath) async {}
 }
 void main() {
   // ---- Visual verification across supported device sizes -------------------------------------
@@ -400,6 +418,54 @@ void main() {
 
       expect(find.text('Trade not available'), findsOneWidget);
       expect(find.textContaining('different account'), findsOneWidget);
+    });
+
+    testWidgets('shows the upload affordance when no screenshot is linked',
+        (WidgetTester tester) async {
+      _useTallSurface(tester);
+      await tester.pumpWidget(
+        _app(const TradeDetailScreen(tradeId: 't1'), trades: <Trade>[trade()]),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('SCREENSHOT'), findsOneWidget);
+      expect(find.text('Upload screenshot'), findsOneWidget);
+      expect(find.text('Replace screenshot'), findsNothing);
+    });
+
+    testWidgets('shows the replace affordance when a screenshot is linked',
+        (WidgetTester tester) async {
+      _useTallSurface(tester);
+      final MockTradeScreenshotService screenshots =
+          MockTradeScreenshotService();
+      // A 1x1 transparent PNG.
+      final Uint8List bytes = Uint8List.fromList(<int>[
+        137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13, 73, 72, 68, 82, 0, 0,
+        0, 1, 0, 0, 0, 1, 8, 6, 0, 0, 0, 31, 21, 196, 137, 0, 0, 0, 13,
+        73, 68, 65, 84, 120, 156, 99, 96, 0, 0, 0, 2, 0, 1, 244, 113, 100,
+        166, 0, 0, 0, 0, 73, 69, 78, 68, 174, 66, 96, 130,
+      ]);
+      final String path = await screenshots.upload(
+        tradeId: 't1',
+        bytes: bytes,
+        fileName: 'chart.png',
+        mimeType: 'image/png',
+      );
+      await tester.pumpWidget(
+        _app(
+          const TradeDetailScreen(tradeId: 't1'),
+          trades: <Trade>[trade(screenshotUrl: path)],
+          screenshots: screenshots,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('SCREENSHOT'), findsOneWidget);
+      expect(find.text('Replace screenshot'), findsOneWidget);
+      expect(find.text('Upload screenshot'), findsNothing);
+      // The downloaded bytes render as an image, not the failure copy.
+      expect(find.bySemanticsLabel('Trade screenshot'), findsOneWidget);
+      expect(find.text('Could not load that screenshot.'), findsNothing);
     });
   });
 group('share card', () {

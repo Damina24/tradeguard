@@ -5,9 +5,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tradeguard/core/constants/app_strings.dart';
 import 'package:tradeguard/core/models/ai_review.dart';
+import 'package:tradeguard/core/services/providers.dart';
 import 'package:tradeguard/features/ai_review/ai_review_providers.dart';
 import 'package:tradeguard/features/ai_review/data/ai_review_repository.dart';
 import 'package:tradeguard/features/ai_review/widgets/ai_review_card.dart';
+import 'package:tradeguard/features/paywall/data/purchase_repository.dart';
 
 /// A stored review, overridable field by field for the state tests.
 AiReview review({
@@ -100,6 +102,9 @@ class _ScriptedRepository implements AiReviewRepository {
 /// `ListView`, so it is never asked to fit a phone's viewport height; it is laid out at the device
 /// width and scrolls. Without this the harness would measure a card taller than a 640px screen as
 /// an overflow — an artefact of the test rig, not a defect in the card.
+///
+/// [isPro] drives the injected `purchasesProvider`: default true so the request
+/// proceeds; pass false to exercise the Pro gate.
 Widget _app(
   Widget child, {
   Key? key,
@@ -110,6 +115,7 @@ Widget _app(
   AiReviewFailure? requestFailure,
   bool pendingRequest = false,
   bool stubbed = false,
+  bool isPro = true,
   void Function(String tradeId)? onRequest,
 }) {
   return ProviderScope(
@@ -128,6 +134,9 @@ Widget _app(
           ),
           't1',
         ),
+      ),
+      purchasesProvider.overrideWith(
+        (Ref ref) => PurchaseNotifier(_FixedPurchaseRepository(isPro)),
       ),
     ],
     child: MaterialApp(
@@ -630,4 +639,68 @@ void main() {
       });
     });
   }
+
+  group('AI Review card — Pro gate', () {
+    testWidgets('a non-Pro trader is shown the paywall instead of a review',
+        (WidgetTester tester) async {
+      _useSurface(tester);
+      // Gate: AI Trade Review requires Pro. With nothing stored and not Pro,
+      // tapping "Get AI review" opens the paywall and makes no request.
+      await tester.pumpWidget(
+        _app(const AiReviewCard(tradeId: 't1'), isPro: false),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Get AI review'));
+      await tester.pumpAndSettle();
+
+      // The paywall is presented; the prompt is unchanged (no review began).
+      expect(find.text('TradeGuard Pro'), findsOneWidget);
+      expect(find.text('Get AI review'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('a non-Pro trader cannot Refresh a stored review either',
+        (WidgetTester tester) async {
+      _useSurface(tester);
+      await tester.pumpWidget(
+        _app(
+          const AiReviewCard(tradeId: 't1'),
+          initial: review(),
+          isPro: false,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Refresh'));
+      await tester.pumpAndSettle();
+
+      // The paywall is shown and the stored review is left untouched.
+      expect(find.text('TradeGuard Pro'), findsOneWidget);
+      expect(find.textContaining('closed in profit'), findsOneWidget);
+    });
+  });
+}
+
+/// A purchase repository pinned to a fixed Pro status and no offerings, so the
+/// AI review Pro gate can be driven both ways.
+class _FixedPurchaseRepository implements PurchaseRepository {
+  _FixedPurchaseRepository(this._pro);
+
+  final bool _pro;
+
+  @override
+  Future<bool> isPro() async => _pro;
+
+  @override
+  Stream<bool> watchProStatus() => Stream<bool>.value(_pro);
+
+  @override
+  Future<List<Object>> loadPackages() async => const <Object>[];
+
+  @override
+  Future<void> purchase(Object package) async {}
+
+  @override
+  Future<void> restore() async {}
 }

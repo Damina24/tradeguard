@@ -6,7 +6,8 @@ import 'package:tradeguard/core/services/account_repository.dart';
 import 'package:tradeguard/core/services/providers.dart';
 import 'package:tradeguard/features/guard/presentation/guard_screen.dart';
 import 'package:tradeguard/features/journal/presentation/journal_screen.dart';
-import 'package:tradeguard/features/settings/presentation/paywall_screen.dart';
+import 'package:tradeguard/features/paywall/data/purchase_repository.dart';
+import 'package:tradeguard/features/paywall/presentation/paywall_screen.dart';
 import 'package:tradeguard/features/settings/presentation/settings_screen.dart';
 import 'package:tradeguard/features/signals/presentation/signals_screen.dart';
 import 'package:tradeguard/features/tools/presentation/tools_screen.dart';
@@ -57,6 +58,28 @@ void main() {
 
     expect(find.text('XAUUSD'), findsWidgets);
     expect(find.text('Copy'), findsWidgets);
+  });
+
+  testWidgets('Signals AI Chart Analysis is gated behind the paywall', (WidgetTester tester) async {
+    // Gate: AI Chart Analysis requires Pro. Not Pro → the button opens the
+    // paywall modal instead of navigating to /tools/chart-analysis.
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: <Override>[
+          purchasesProvider.overrideWith(
+            (Ref ref) => PurchaseNotifier(_FixedProRepository(false)),
+          ),
+        ],
+        child: const MaterialApp(home: SignalsScreen()),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('AI Chart Analysis'));
+    await tester.pumpAndSettle();
+
+    // The paywall is presented; the chart-analysis screen is not reached.
+    expect(find.text('TradeGuard Pro'), findsOneWidget);
   });
 
   testWidgets('Settings screen exposes delete account and legal links', (WidgetTester tester) async {
@@ -169,11 +192,39 @@ void main() {
       expect(find.textContaining('Read-only'), findsOneWidget);
     });
 
-  testWidgets('Paywall shows Pro pricing', (WidgetTester tester) async {
+  testWidgets('Paywall renders the Pro offers surface', (WidgetTester tester) async {
     await tester.pumpWidget(_wrap(const PaywallScreen()));
     await tester.pumpAndSettle();
 
+    // Mock mode is not Pro and the store returns no offerings, so the offers
+    // surface shows its empty-state copy, a Restore Purchases action and the
+    // verbatim risk disclaimer — never a purchase button with an invented price.
     expect(find.text('TradeGuard Pro'), findsOneWidget);
-    expect(find.text(r'$29.99'), findsOneWidget);
+    expect(find.text('Restore Purchases'), findsOneWidget);
+    expect(find.textContaining('No subscription options'), findsOneWidget);
+    expect(find.textContaining('high-risk'), findsOneWidget);
   });
+}
+
+/// A purchase repository pinned to a fixed Pro status and no offerings, so the
+/// Signals AI Chart Analysis gate can be driven to the paywall.
+class _FixedProRepository implements PurchaseRepository {
+  _FixedProRepository(this._pro);
+
+  final bool _pro;
+
+  @override
+  Future<bool> isPro() async => _pro;
+
+  @override
+  Stream<bool> watchProStatus() => Stream<bool>.value(_pro);
+
+  @override
+  Future<List<Object>> loadPackages() async => const <Object>[];
+
+  @override
+  Future<void> purchase(Object package) async {}
+
+  @override
+  Future<void> restore() async {}
 }

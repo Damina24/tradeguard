@@ -97,6 +97,9 @@ class _ManyTrades implements TradeRepository {
 
   @override
   Future<void> updateNotes(String tradeId, String notes) async {}
+
+  @override
+  Future<void> updateScreenshot(String tradeId, String screenshotPath) async {}
 }
 
 Widget _app(

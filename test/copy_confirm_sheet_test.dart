@@ -8,6 +8,7 @@ import 'package:tradeguard/core/services/account_repository.dart';
 import 'package:tradeguard/core/services/mock_data.dart';
 import 'package:tradeguard/core/services/providers.dart';
 import 'package:tradeguard/core/theme/app_theme.dart';
+import 'package:tradeguard/features/paywall/data/purchase_repository.dart';
 import 'package:tradeguard/features/signals/presentation/copy_confirm_sheet.dart';
 
 /// The S8 copy confirm sheet (task 3.4).
@@ -42,13 +43,21 @@ void main() {
 
   /// Opens the sheet through a real `showModalBottomSheet`, exactly as the
   /// signals screen does, so `_confirm`'s pop + snackbar path is exercised.
-  Future<void> pumpModal(WidgetTester tester) async {
+  ///
+  /// [isPro] drives the injected `purchasesProvider`: default true so the copy
+  /// proceeds; pass false to exercise the Pro gate.
+  Future<void> pumpModal(WidgetTester tester, {bool isPro = true}) async {
     tester.view.physicalSize = const Size(1000, 2400);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.reset);
 
     await tester.pumpWidget(
       ProviderScope(
+        overrides: <Override>[
+          purchasesProvider.overrideWith(
+            (Ref ref) => PurchaseNotifier(_FixedPurchaseRepository(isPro)),
+          ),
+        ],
         child: MaterialApp(
           theme: AppTheme.dark,
           home: Scaffold(
@@ -208,6 +217,23 @@ void main() {
       expect(find.textContaining('Nothing sent to a broker'), findsOneWidget);
     });
 
+    testWidgets('a non-Pro trader is shown the paywall instead of copying', (
+      WidgetTester tester,
+    ) async {
+      // Gate: Copy-trading requires Pro. Not Pro → the confirm never runs the
+      // copy; the paywall modal is shown over the still-open sheet.
+      await pumpModal(tester, isPro: false);
+      expect(find.text('Copy Signal'), findsOneWidget);
+
+      await tester.tap(find.text('Confirm Copy'));
+      await tester.pumpAndSettle();
+
+      // The paywall is presented, and the copy was NOT executed (no toast).
+      expect(find.text('TradeGuard Pro'), findsOneWidget);
+      expect(find.textContaining('Paper copy simulated'), findsNothing);
+      expect(find.textContaining('Nothing sent to a broker'), findsNothing);
+    });
+
     testWidgets('an accountless trader is told to connect, not shown zero lots', (
       WidgetTester tester,
     ) async {
@@ -257,6 +283,29 @@ class _EmptyAccounts implements AccountRepository {
 
   @override
   Future<void> setCopyEnabled(String accountId, bool enabled) async {}
+}
+
+/// A purchase repository pinned to a fixed Pro status and no offerings, so the
+/// copy-confirm Pro gate can be driven both ways.
+class _FixedPurchaseRepository implements PurchaseRepository {
+  _FixedPurchaseRepository(this._pro);
+
+  final bool _pro;
+
+  @override
+  Future<bool> isPro() async => _pro;
+
+  @override
+  Stream<bool> watchProStatus() => Stream<bool>.value(_pro);
+
+  @override
+  Future<List<Object>> loadPackages() async => const <Object>[];
+
+  @override
+  Future<void> purchase(Object package) async {}
+
+  @override
+  Future<void> restore() async {}
 }
 
 

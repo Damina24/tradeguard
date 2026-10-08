@@ -1,9 +1,15 @@
+import 'dart:typed_data';
+
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tradeguard/core/models/account.dart';
+import 'package:tradeguard/core/models/trade.dart';
 import 'package:tradeguard/core/services/account_repository.dart';
 import 'package:tradeguard/core/services/auth_repository.dart';
+import 'package:tradeguard/core/services/providers.dart';
 import 'package:tradeguard/core/services/services.dart';
 import 'package:tradeguard/core/services/trade_repository.dart';
+import 'package:tradeguard/features/journal/data/trade_screenshot_service.dart';
 
 void main() {
   group('MockAccountRepository', () {
@@ -117,6 +123,51 @@ void main() {
       expect(after.notes, 'waited for retest');
       expect(after.pnl, before.pnl);
       expect(after.lots, before.lots);
+    });
+
+    test('updateScreenshot links the storage path', () async {
+      final MockTradeRepository repo = MockTradeRepository();
+      await repo.updateScreenshot('t_3', 'uid/t_3/123.png');
+      final Trade trade =
+          (await repo.fetchTrades()).firstWhere((Trade t) => t.id == 't_3');
+      expect(trade.screenshotUrl, 'uid/t_3/123.png');
+    });
+
+    test('uploadScreenshot uploads then links the returned path', () async {
+      final MockTradeScreenshotService screenshots =
+          MockTradeScreenshotService();
+      final TradesNotifier notifier = TradesNotifier(
+        MockTradeRepository(),
+        screenshots: screenshots,
+      );
+      await notifier.refresh();
+      final Uint8List bytes = Uint8List.fromList(<int>[1, 2, 3]);
+      await notifier.uploadScreenshot(
+        't_3',
+        PickedScreenshot(
+          bytes: bytes,
+          fileName: 'chart.png',
+          mimeType: 'image/png',
+        ),
+      );
+      final Trade linked =
+          notifier.state.firstWhere((Trade t) => t.id == 't_3');
+      expect(linked.screenshotUrl, isNotNull);
+      expect(await screenshots.download(linked.screenshotUrl), bytes);
+      notifier.dispose();
+    });
+
+    test('screenshot providers resolve the mock service by default', () {
+      final ProviderContainer container = ProviderContainer();
+      addTearDown(container.dispose);
+      expect(
+        container.read(tradeScreenshotServiceProvider),
+        same(Services.instance.screenshots),
+      );
+      expect(
+        container.read(tradeScreenshotServiceProvider),
+        isA<MockTradeScreenshotService>(),
+      );
     });
 
     test('unknown trade throws', () async {

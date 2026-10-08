@@ -14,6 +14,7 @@ import '../data/copy_signal_repository.dart';
 import '../domain/copy_preview.dart';
 import '../signal_providers.dart';
 import '../domain/copy_signal.dart';
+import '../../paywall/presentation/paywall_screen.dart';
 
 /// S8 — the copy confirm bottom sheet (task 3.5).
 ///
@@ -83,6 +84,10 @@ class _CopyConfirmSheetState extends ConsumerState<CopyConfirmSheet> {
     return Consumer(
       builder: (BuildContext context, WidgetRef ref, Widget? child) {
         final List<TradingAccount> accounts = ref.watch(accountsProvider);
+        // Prime the Pro gate (see SignalsScreen): reading purchasesProvider here
+        // syncs the entitlement when the sheet opens, so the first Confirm tap
+        // reads the real isPro instead of the notifier's initial false.
+        ref.watch(purchasesProvider);
         // The trader's stored guardrails and the open-follow count drive the
         // preview (task 3.6): the kill switch, the caps and the per-account
         // permission are named before the round trip — the server still
@@ -358,6 +363,19 @@ class _CopyConfirmSheetState extends ConsumerState<CopyConfirmSheet> {
   /// reports can never disagree with the preview, because the server
   /// recomputes from live equity and re-checks every guardrail.
   Future<void> _confirm() async {
+    // Gate: Copy-trading requires Pro.
+    if (!ref.read(purchasesProvider).isPro) {
+      await showModalBottomSheet<void>(
+        context: context,
+        isScrollControlled: true,
+        backgroundColor: AppColors.surface,
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        ),
+        builder: (_) => const PaywallScreen(),
+      );
+      return;
+    }
     try {
       final CopySignalResult result = await _repo!.placeCopySignal(
         signalId: widget.signal.id,

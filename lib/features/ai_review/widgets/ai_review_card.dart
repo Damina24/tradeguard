@@ -4,8 +4,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/constants/app_strings.dart';
 import '../../../core/models/ai_review.dart';
 import '../../../core/models/ai_review_band.dart';
+import '../../../core/services/providers.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_text_styles.dart';
+import '../../paywall/presentation/paywall_screen.dart';
 import '../ai_review_providers.dart';
 import '../data/ai_review_repository.dart';
 
@@ -33,6 +35,10 @@ class AiReviewCard extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final AiReviewState state = ref.watch(aiReviewProvider(tradeId));
+    // Prime the Pro gate (see SignalsScreen): reading purchasesProvider here syncs
+    // the entitlement when the card builds, so the first "Get AI review" / Refresh
+    // tap reads the real isPro instead of the notifier's initial false.
+    ref.watch(purchasesProvider);
 
     return Container(
       width: double.infinity,
@@ -45,9 +51,9 @@ class AiReviewCard extends ConsumerWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
-          _header(ref, state),
+          _header(context, ref, state),
           const SizedBox(height: 12),
-          _body(ref, state),
+          _body(context, ref, state),
           const SizedBox(height: 12),
           // Compliance. AI output is a risk surface, so the disclaimer sits on the card itself
           // rather than only on the signals and paywall screens named in AGENTS.md.
@@ -61,7 +67,7 @@ class AiReviewCard extends ConsumerWidget {
     );
   }
 
-  Widget _header(WidgetRef ref, AiReviewState state) {
+  Widget _header(BuildContext context, WidgetRef ref, AiReviewState state) {
     final bool busy = state.isLoading;
     final AiReview? review = state.review;
 
@@ -100,15 +106,34 @@ class AiReviewCard extends ConsumerWidget {
           )
         else if (review != null)
           TextButton(
-            onPressed: () =>
-                ref.read(aiReviewProvider(tradeId).notifier).request(),
+            onPressed: () => _requestReview(context, ref),
             child: const Text('Refresh'),
           ),
       ],
     );
   }
 
-  Widget _body(WidgetRef ref, AiReviewState state) {
+  /// Requests a fresh AI review, unless the trader is not Pro — in which case
+  /// the paywall is shown and no request is made.
+  ///
+  /// Gate: AI Trade Review requires Pro.
+  void _requestReview(BuildContext context, WidgetRef ref) {
+    if (!ref.read(purchasesProvider).isPro) {
+      showModalBottomSheet<void>(
+        context: context,
+        isScrollControlled: true,
+        backgroundColor: AppColors.surface,
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        ),
+        builder: (_) => const PaywallScreen(),
+      );
+      return;
+    }
+    ref.read(aiReviewProvider(tradeId).notifier).request();
+  }
+
+  Widget _body(BuildContext context, WidgetRef ref, AiReviewState state) {
     final AiReview? review = state.review;
 
     // A failure is a BANNER, not a replacement. When a previous review is still in state, the
@@ -140,7 +165,7 @@ class AiReviewCard extends ConsumerWidget {
 
     if (review == null) {
       return _Prompt(
-        onRequest: () => ref.read(aiReviewProvider(tradeId).notifier).request(),
+        onRequest: () => _requestReview(context, ref),
       );
     }
 

@@ -35,7 +35,7 @@ supabase link --project-ref <project-ref>
 supabase db push
 ```
 
-That applies `0001_init.sql` … `0009_copy_signal_schema.sql`. Migration 0009 is the copy-signal
+That applies `0001_init.sql` … `0010_trade_screenshots_storage.sql`. Migration 0009 is the copy-signal
 schema (tasks 3.5/3.6): `broker_accounts.copy_enabled` (per-account permission, OFF by default),
 `copy_settings` (live consent, kill switch, lot + concurrent caps, absent row == defaults), and
 `signal_follows.order_id` (live rows always carry one, paper rows always NULL — enforced by the

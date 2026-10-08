@@ -157,7 +157,7 @@ bring-up, including the Vault secrets the cron job needs, is `docs/BACKEND_DEPLO
 |---|---|---|
 | 2.1 | CSV/HTML import + dupe handling | ✅ (`TradeRecord`, `TradeFileParser` + registry, mock-first `TradeImportRepository`) |
 | 2.2 | sync-trades worker | ✅ idempotent + incremental (`trade_sync_cursors`, `(account_id, external_id)` upsert, cron 5/min) |
-| 2.3 | Trade detail + grading + screenshots | ✅ detail, deterministic A–D checklist grade, share card (screenshot upload still ⬜) |
+| 2.3 | Trade detail + grading + screenshots | ✅ detail, deterministic A–D checklist grade, share card, screenshot upload/link/display (private `trade-screenshots` bucket via migration 0010, owner-scoped storage policies, `TradeScreenshotService` + `updateScreenshot`, mock-first) |
 | 2.4 | Pattern views + leaks UI | ✅ `PatternRow`/`PatternMetrics` over `v_patterns`, mock-first, conservative leak detector; migration 0006 makes the views RLS-respecting 🧑 (not yet applied live) |
 | 2.5 | ai-review card | ✅ `ai-review` Edge Function (allowlist projection, prompt versioned in source) + `AiReviewCard` on S5, mock-first; migration 0007 makes `ai_reviews` SELECT-only and idempotent 🧑 (not yet applied live) |
 | 2.6 | Replay lite | ✅ bar-by-bar replay engine (pessimistic fill rules), `ReplayScan` with a reporting floor, fl_chart chart + play/step transport, mock-first; `market-bars` Edge Function + migration 0008 open `prices_cache` for reads and revoke every client write — ✅ **LIVE 2026-10-06** (3a gate passed via `tools/gate_0008.mjs`: user read = full count 2, anon = 0 as data, user POST = 403) |

@@ -11,6 +11,10 @@ abstract class TradeRepository {
   Future<void> updateGrade(String tradeId, String grade);
 
   Future<void> updateNotes(String tradeId, String notes);
+
+  /// Links an uploaded screenshot (a `trade-screenshots` storage PATH, never a
+  /// public or signed URL) to the trade.
+  Future<void> updateScreenshot(String tradeId, String screenshotPath);
 }
 
 /// In-memory journal used in mock mode, seeded with the same deterministic data the tests use.
@@ -40,6 +44,14 @@ class MockTradeRepository implements TradeRepository {
   @override
   Future<void> updateNotes(String tradeId, String notes) async {
     _replace(tradeId, (Trade t) => t.copyWith(notes: notes));
+  }
+
+  @override
+  Future<void> updateScreenshot(String tradeId, String screenshotPath) async {
+    _replace(
+      tradeId,
+      (Trade t) => t.copyWith(screenshotUrl: screenshotPath),
+    );
   }
 
   void _replace(String tradeId, Trade Function(Trade) transform) {

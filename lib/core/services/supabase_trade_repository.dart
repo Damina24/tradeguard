@@ -38,6 +38,10 @@ class SupabaseTradeRepository implements TradeRepository {
   Future<void> updateNotes(String tradeId, String notes) =>
       _patch(tradeId, <String, dynamic>{'notes': notes});
 
+  @override
+  Future<void> updateScreenshot(String tradeId, String screenshotPath) =>
+      _patch(tradeId, <String, dynamic>{'screenshot_url': screenshotPath});
+
   Future<void> _patch(String tradeId, Map<String, dynamic> values) async {
     await _client.from('trades').update(values).eq('id', tradeId);
   }

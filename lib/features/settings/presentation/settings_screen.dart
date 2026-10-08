@@ -9,7 +9,7 @@ import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_text_styles.dart';
 import '../../../core/widgets/disclaimer_note.dart';
 import '../../accounts/presentation/connect_broker_sheet.dart';
-import 'paywall_screen.dart';
+import '../../paywall/presentation/paywall_screen.dart';
 import 'settings_tiles.dart';
 
 class SettingsScreen extends ConsumerWidget {
