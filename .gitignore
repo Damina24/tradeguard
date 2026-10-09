@@ -36,8 +36,6 @@ ios/Runner.xcodeproj/xcuserdata/
 *.iml
 
 # Secrets / platform config
-android/app/google-services.json
-ios/Runner/GoogleService-Info.plist
 android/key.properties
 *.jks
 *.keystore

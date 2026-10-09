@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "880718744829",
+    "project_id": "strategy-tracker-cb579",
+    "storage_bucket": "strategy-tracker-cb579.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:880718744829:android:6d448f52ee0e26d8164294",
+        "android_client_info": {
+          "package_name": "com.tradeguard.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCuEg8N0I6G0iFnWNfwSb1kGPhHcHQc8iU"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
