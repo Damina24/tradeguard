@@ -18,6 +18,7 @@ import 'copy_settings_repository.dart';
 import 'guard_alert_monitor.dart';
 import 'mock_data.dart';
 import 'services.dart';
+import 'telemetry_service.dart';
 import 'trade_repository.dart';
 
 import '../../features/paywall/data/purchase_repository.dart';
@@ -226,7 +227,11 @@ class PurchaseNotifier extends StateNotifier<PurchaseState> {
     try {
       // copyWith (not a fresh state) so a concurrent loadPackages() result is
       // preserved — replacing the state here would wipe the offerings.
-      state = state.copyWith(isPro: await _repo.isPro());
+      final bool isPro = await _repo.isPro();
+      // Segment crash reports by entitlement tier. 'free'/'pro' only — never
+      // an account id, email or purchase receipt.
+      TelemetryService.instance.setAppTier(isPro ? 'pro' : 'free');
+      state = state.copyWith(isPro: isPro);
     } catch (e) {
       state = state.copyWith(error: e);
     }

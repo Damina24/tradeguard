@@ -2,6 +2,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:tradeguard/core/models/copy_settings.dart';
 
 import '../../../core/services/supabase_service.dart';
+import '../../../core/services/telemetry_service.dart';
 import '../domain/copy_signal.dart';
 import 'copy_signal_repository.dart';
 
@@ -36,6 +37,9 @@ class SupabaseCopySignalRepository implements CopySignalRepository {
     required double riskPct,
     required String mode,
   }) async {
+    // Coarse, non-PII: a copy was attempted. No signal id, account id, lot
+    // size or equity is sent — only the fact that the flow was entered.
+    TelemetryService.instance.logEvent('copy_signal_attempted');
     final dynamic response;
     try {
       response = await _service.client.functions.invoke(

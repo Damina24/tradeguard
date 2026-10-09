@@ -1,3 +1,4 @@
+import 'package:tradeguard/core/services/telemetry_service.dart';
 import 'package:tradeguard/core/utils/trading_math.dart';
 
 import '../domain/copy_signal.dart';
@@ -48,6 +49,9 @@ class MockCopySignalRepository implements CopySignalRepository {
     required double riskPct,
     required String mode,
   }) {
+    // Coarse, non-PII: a copy was attempted. No signal id, account id, lot
+    // size or equity is sent — only the fact that the flow was entered.
+    TelemetryService.instance.logEvent('copy_signal_attempted');
     final List<CopySignalRow> results = <CopySignalRow>[];
     for (final String accountId in accountIds) {
       final double lots = TradingMath.lotSize(

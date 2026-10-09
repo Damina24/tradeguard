@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/models/account.dart';
 import '../../../core/models/guard_status.dart';
 import '../../../core/services/providers.dart';
+import '../../../core/services/telemetry_service.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/utils/formatters.dart';
 import '../../../core/widgets/account_chip.dart';
@@ -122,6 +123,9 @@ class GuardScreen extends ConsumerWidget {
   }
 
   Future<void> _confirmStop(BuildContext context, GuardStatus status) async {
+    // Coarse, non-PII: the trader reached for the emergency stop. No account
+    // id, equity or drawdown value is attached.
+    TelemetryService.instance.logEvent('guard_stop_pressed');
     final bool? ok = await showDialog<bool>(
       context: context,
       builder: (BuildContext c) => AlertDialog(

@@ -4,6 +4,7 @@ import 'package:purchases_flutter/purchases_flutter.dart';
 
 import '../../../core/constants/app_strings.dart';
 import '../../../core/services/providers.dart';
+import '../../../core/services/telemetry_service.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_text_styles.dart';
 import '../data/purchase_repository.dart';
@@ -26,11 +27,24 @@ import '../data/purchase_repository.dart';
 ///
 /// The Equity Guard, Kill Switch and STOP button are deliberately NOT part of
 /// this paywall — they are safety features and stay free for every trader.
-class PaywallScreen extends ConsumerWidget {
+class PaywallScreen extends ConsumerStatefulWidget {
   const PaywallScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<PaywallScreen> createState() => _PaywallScreenState();
+}
+
+class _PaywallScreenState extends ConsumerState<PaywallScreen> {
+  @override
+  void initState() {
+    super.initState();
+    // Coarse, non-PII: the paywall was opened. No user id, chosen plan or
+    // price is attached — only the fact that the surface was viewed.
+    TelemetryService.instance.logEvent('paywall_viewed');
+  }
+
+  @override
+  Widget build(BuildContext context) {
     ref.listen<PurchaseState>(
       purchasesProvider,
       (PurchaseState? previous, PurchaseState next) {
