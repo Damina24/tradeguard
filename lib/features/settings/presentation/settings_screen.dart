@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../../core/constants/app_config.dart';
 import '../../../core/constants/app_strings.dart';
@@ -45,8 +46,11 @@ class SettingsScreen extends ConsumerWidget {
           const SizedBox(height: 8),
           SettingsTiles.tile(Icons.restore, 'Restore purchases',
               () => SettingsTiles.snack(context, 'No purchases found.'),),
-          SettingsTiles.tile(Icons.card_giftcard, 'Broker cashback',
-              () => SettingsTiles.snack(context, 'Cashback — Phase 4.'),),
+          SettingsTiles.tile(
+            Icons.card_giftcard,
+            'Broker Offers & Cashback',
+            () => context.push('/broker-offers'),
+          ),
           const SizedBox(height: 20),
           const Text('LEGAL', style: AppTextStyles.label),
           const SizedBox(height: 8),

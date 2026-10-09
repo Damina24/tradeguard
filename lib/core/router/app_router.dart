@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../features/auth/presentation/auth_screen.dart';
+import '../../features/broker_offers/presentation/broker_offers_screen.dart';
+import '../../features/broker_offers/presentation/broker_webview_screen.dart';
 import '../../features/chart_analysis/presentation/chart_analysis_screen.dart';
 import '../../features/guard/presentation/guard_screen.dart';
 import '../../features/journal/presentation/journal_screen.dart';
@@ -117,6 +119,25 @@ final Provider<GoRouter> routerProvider = Provider<GoRouter>((Ref ref) {
             ],
           ),
         ],
+      ),
+      // Full-screen monetisation surfaces, deliberately OUTSIDE the shell so
+      // neither shows the bottom navigation bar — the WebView especially should
+      // feel like a dedicated browser, not a tab. Reached from Settings.
+      GoRoute(
+        path: '/broker-offers',
+        builder: (_, __) => const BrokerOffersScreen(),
+      ),
+      GoRoute(
+        path: '/broker-webview',
+        builder: (BuildContext context, GoRouterState state) {
+          final Map<String, dynamic> args =
+              (state.extra as Map<String, dynamic>?) ?? const <String, dynamic>{};
+          final String url = (args['url'] as String?) ??
+              (state.uri.queryParameters['url'] ?? '');
+          final String title = (args['title'] as String?) ??
+              (state.uri.queryParameters['title'] ?? 'Broker');
+          return BrokerWebViewScreen(url: url, title: title);
+        },
       ),
     ],
   );

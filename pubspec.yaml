@@ -40,6 +40,9 @@ dev_dependencies:
   flutter_lints: ^4.0.0
   mocktail: ^1.0.4
   build_runner: ^2.4.11
+  # Test-only: lets broker_webview_screen_test.dart build a fake WebViewPlatform
+  # (WebViewController asserts a platform is registered before it constructs).
+  webview_flutter_platform_interface: ^2.10.0
 
 flutter:
   uses-material-design: true
