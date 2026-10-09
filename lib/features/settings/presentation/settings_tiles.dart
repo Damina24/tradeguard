@@ -67,32 +67,4 @@ class SettingsTiles {
           ],
         ),
       );
-
-  static Future<void> confirmDelete(BuildContext context) async {
-    final bool? ok = await showDialog<bool>(
-      context: context,
-      builder: (BuildContext c) => AlertDialog(
-        backgroundColor: AppColors.surface,
-        title: const Text('Delete account?'),
-        content: const Text(
-          'This permanently removes your profile, broker connections, trades, '
-          'snapshots and screenshots within 30 days. Subscriptions must be cancelled '
-          'separately in the store. This cannot be undone.',
-        ),
-        actions: <Widget>[
-          TextButton(
-            onPressed: () => Navigator.pop(c, false),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(c, true),
-            child: const Text('Delete', style: TextStyle(color: AppColors.danger)),
-          ),
-        ],
-      ),
-    );
-    if (ok == true && context.mounted) {
-      snack(context, 'Deletion requested. Processed within 30 days.');
-    }
-  }
 }

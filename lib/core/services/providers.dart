@@ -9,6 +9,7 @@ import '../models/guard_status.dart';
 import '../models/signal.dart';
 import '../models/trade.dart';
 import '../../features/journal/data/trade_screenshot_service.dart';
+import '../../features/settings/data/delete_account_repository.dart';
 import '../../features/journal/domain/trade_grade.dart';
 import '../../features/journal/domain/trade_metrics.dart';
 import '../../features/journal/domain/trade_review.dart';
@@ -175,6 +176,17 @@ copySettingsProvider =
     StateNotifierProvider<CopySettingsNotifier, CopySettings>(
   (Ref ref) => CopySettingsNotifier(Services.instance.copySettings),
 );
+
+// ---- Account deletion (store compliance) ----
+
+/// The `delete-account` Edge Function, as a plain provider: the tree owns the
+/// implementation, and swapping it is what makes the destructive confirmation
+/// UI testable. In mock mode [Services.instance.deleteAccount] records the
+/// request and resolves without touching anything, so the confirm gating, the
+/// sign-out on success and the trader-safe error copy are all exercisable with
+/// no backend — nothing is ever really deleted in mock mode.
+final Provider<DeleteAccountRepository> deleteAccountRepositoryProvider =
+    Provider<DeleteAccountRepository>((Ref ref) => Services.instance.deleteAccount);
 
 // ---- Purchases (RevenueCat) ----
 

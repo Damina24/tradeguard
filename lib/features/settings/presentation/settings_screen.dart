@@ -11,6 +11,7 @@ import '../../../core/theme/app_text_styles.dart';
 import '../../../core/widgets/disclaimer_note.dart';
 import '../../accounts/presentation/connect_broker_sheet.dart';
 import '../../paywall/presentation/paywall_screen.dart';
+import 'delete_account_dialog.dart';
 import 'settings_tiles.dart';
 
 class SettingsScreen extends ConsumerWidget {
@@ -68,7 +69,10 @@ class SettingsScreen extends ConsumerWidget {
           SettingsTiles.tile(
             Icons.delete_forever,
             'Delete account',
-            () => SettingsTiles.confirmDelete(context),
+            () => showDialog<void>(
+              context: context,
+              builder: (BuildContext c) => const DeleteAccountDialog(),
+            ),
             color: AppColors.danger,
           ),
           const SizedBox(height: 16),

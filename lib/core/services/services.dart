@@ -18,6 +18,9 @@ import '../../features/journal/data/trade_screenshot_service.dart';
 import '../../features/signals/data/copy_signal_repository.dart';
 import '../../features/signals/data/mock_copy_signal_repository.dart';
 import '../../features/signals/data/supabase_copy_signal_repository.dart';
+import '../../features/settings/data/delete_account_repository.dart';
+import '../../features/settings/data/mock_delete_account_repository.dart';
+import '../../features/settings/data/supabase_delete_account_repository.dart';
 import 'account_repository.dart';
 import 'auth_repository.dart';
 import 'broker_connect_service.dart';
@@ -106,6 +109,14 @@ class Services {
   late final CopySignalRepository copySignal = isMock
       ? MockCopySignalRepository()
       : SupabaseCopySignalRepository();
+
+  /// The `delete-account` Edge Function (store compliance: Apple 5.1.1(v),
+  /// Google Play account-deletion). Mock mode records the request and
+  /// resolves without touching anything, so the destructive confirmation UI
+  /// is fully exercisable with no backend — nothing is ever really deleted.
+  late final DeleteAccountRepository deleteAccount = isMock
+      ? MockDeleteAccountRepository()
+      : SupabaseDeleteAccountRepository();
 
   /// The trader's `copy_settings` row (task 3.6): live consent, kill switch,
   /// max-lots cap and concurrent cap. Mock mode keeps the row in memory, so

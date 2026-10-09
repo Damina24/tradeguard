@@ -274,6 +274,7 @@ roadmap's "setup leaks"; it needs a view revision first, not a client-side roll-
 | `market-bars` | HTTP (auth) | TwelveData OHLC → normalise → upsert `prices_cache` (task 2.6) |
 | `ai-analyze-chart` | HTTP (auth) | OpenAI vision → plan JSON |
 | `copy-signal` | HTTP (auth) | lots calc → MetaAPI order (paper/live) |
+| `delete-account` | HTTP (auth) | delete the caller's account + all their data (store compliance) |
 | `purge-account` | HTTP (auth) | delete user data for Account Deletion |
 
 `guard-check` is invoked by pg_cron + pg_net presenting the **service-role** key as a bearer token
@@ -298,6 +299,7 @@ POST /functions/v1/ai-review          {trade_id} -> {summary, leak, score, sugge
 POST /functions/v1/market-bars          {symbol, interval} -> {symbol, interval, bars[], as_of}
 POST /functions/v1/ai-analyze-chart   {image_url} -> {bias, levels[], entry, sl, tp[]}
 POST /functions/v1/copy-signal        {signal_id, account_ids[], risk_pct, mode} -> {results[]}
+POST /functions/v1/delete-account     (no body) -> {ok, deleted{<table>:n}, storage, user_deleted}
 ```
 
 Every contract has a matching mock in `lib/core/services/mock_*`.
@@ -307,7 +309,26 @@ Every contract has a matching mock in `lib/core/services/mock_*`.
 `purge-account` deletes trades, snapshots, follows, reviews, storage screenshots and broker
 tokens; anonymizes profile (email hashed) for purchase/tax records. SLA 30 days.
 
+### In-app account deletion (`delete-account`)
+
+The `delete-account` Edge Function is what the in-app **Delete Account** action calls (Apple
+**5.1.1(v)**, Google Play account-deletion). Unlike the 30-day `purge-account` path, it removes
+everything **immediately**, in one authenticated call:
+
+- Rows in every table with a `user_id` column, **child-first** — `ai_reviews`, `signal_follows`,
+  `trade_sync_cursors`, `trades`, `broker_accounts` (cascades `equity_snapshots`), `copy_settings`,
+  then `profiles` (keyed by `id` = uid). The list is enumerated from migrations 0001–0010 in
+  `supabase/functions/delete-account/shared.ts` (`TABLES`).
+- The caller's objects in the private `trade-screenshots` bucket under the `<uid>/` prefix.
+- The `auth.users` row last, via `supabase.auth.admin.deleteUser(uid)`.
+
+Every statement is scoped to the caller's **verified** uid (from their GoTrue bearer — never a
+request body), the call is **idempotent** (a second call returns the same success summary with all
+counts `0`), and global tables are never touched. Details and the verification curl are in
+`docs/BACKEND_DEPLOY.md` §3c.
+
 `prices_cache` is **not** per-user data and is deliberately not purged with an account: it holds
 public OHLC candles keyed by symbol, holds nothing about the trader who fetched it, and is shared by
 every user. Deleting it on account closure would discard a cache another trader's replay is reading.
-The cache is pruned by age (rows nothing has requested for days), not by owner.
+The cache is pruned by age (rows nothing has requested for days), not by owner. The same applies to
+`signals`, the shared operator ledger keyed by `posted_by` — `delete-account` never removes it.

@@ -44,5 +44,11 @@ verify_jwt = true
 [functions.copy-signal]
 verify_jwt = true
 
+# delete-account is user-facing (a trader deletes their own account from Settings). Same shape as
+# copy-signal / ai-review: the platform verifies the JWT and the function additionally resolves the
+# caller with GoTrue from their own bearer token. Every delete is scoped to that verified uid.
+[functions.delete-account]
+verify_jwt = true
+
 [functions.purge-account]
 verify_jwt = true

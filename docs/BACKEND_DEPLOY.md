@@ -294,6 +294,68 @@ Behaviours worth checking explicitly, because each is deliberate:
 
 ---
 
+## 3c. The `delete-account` function (store compliance)
+
+```bash
+supabase functions deploy delete-account
+```
+
+`delete-account` powers the in-app **Delete Account** action both stores require (Apple
+**5.1.1(v)**, Google Play account-deletion). It is **user-facing**, so it uses the same
+`ai-review` gate as `copy-signal` — `verify_jwt = true` (`supabase/config.toml`) plus a GoTrue
+lookup of the caller's **own** bearer token. The uid comes only from that verified JWT; there is
+no request body and no id is ever read from a header other than the token. It needs
+`SUPABASE_URL` / `SUPABASE_SERVICE_KEY` / `SUPABASE_ANON_KEY` (platform-provided) — no extra
+secret.
+
+What one call does, in order (all scoped to the caller's verified uid):
+
+1. Deletes the caller's rows **child-first** in every table that holds a `user_id` column —
+   enumerated from migrations 0001–0010 in `supabase/functions/delete-account/shared.ts`
+   (`TABLES`): `ai_reviews`, `signal_follows`, `trade_sync_cursors`, `trades`, `broker_accounts`
+   (whose delete cascades `equity_snapshots`), `copy_settings`, then `profiles` (keyed by `id`).
+   Global tables — `signals` (`posted_by`) and `prices_cache` (no `user_id`) — are **never**
+   touched.
+2. Lists then removes the caller's objects in the private `trade-screenshots` bucket under the
+   `<uid>/` path prefix (migration 0010).
+3. Calls `supabase.auth.admin.deleteUser(uid)` **last**, so a mid-way failure leaves an intact,
+   signed-in account the trader can retry — never an orphaned login with half its rows gone.
+
+It is **idempotent**: a second call finds nothing to delete and still returns a success summary
+(an already-deleted user from `deleteUser` is treated as success, not an error). Responses are
+`401` (no/invalid bearer), `405` (non-POST), `503` (function not configured) or `500` (a delete
+failed) with a safe token; the server logs **counts and short codes only**, never a body or a uid.
+
+The orchestration and the whole contract are unit-tested without a runtime against a recording
+fake client — this is the suite CI runs:
+
+```bash
+node supabase/functions/delete-account/delete_account_test.ts
+# → delete-account: 14 tests passed
+```
+
+The Dart half (destructive two-step dialog, checkbox-gated confirm, sign-out on success,
+trader-safe errors) is covered by `flutter test` (`test/delete_account_dialog_test.dart`).
+
+```bash
+curl -X POST "https://<project-ref>.supabase.co/functions/v1/delete-account" \
+  -H "Authorization: Bearer <a user access token>" \
+  -H "apikey: <anon key>"
+# → {"ok":true,"deleted":{"ai_reviews":2,"signal_follows":1,"trade_sync_cursors":1,"trades":42,
+#     "broker_accounts":2,"copy_settings":1,"profiles":1},"storage":3,"user_deleted":true}
+```
+
+Without the bearer you get `401 {"ok":false,"error":"Unauthorized"}` — that is the auth gate
+working. To verify end to end, sign in as a trader with data, run the call once (rows and
+screenshots gone, user removed), then run it again — the second call returns the same success
+shape with all counts `0`.
+
+> Deleting the account does **not** cancel an active subscription. The dialog says so and points
+> the trader to the App Store / Google Play subscription settings; cancellation is manual and out
+> of band. See also `docs/ACCOUNT_DELETION.md` (the public data-deletion page the stores link to).
+
+---
+
 ## 4. Apple & Google sign-in 🧑
 
 The client is done (`sign_in_with_apple` / `google_sign_in` → `signInWithIdToken`). These steps make
