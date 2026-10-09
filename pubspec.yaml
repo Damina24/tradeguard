@@ -45,8 +45,33 @@ dev_dependencies:
   # Test-only: lets broker_webview_screen_test.dart build a fake WebViewPlatform
   # (WebViewController asserts a platform is registered before it constructs).
   webview_flutter_platform_interface: ^2.10.0
+  flutter_launcher_icons: ^0.13.1
+  flutter_native_splash: ^2.4.1
 
 flutter:
   uses-material-design: true
   assets:
     - assets/images/
+
+# ---------------------------------------------------------------------------
+# Branding generation (TradeGuard launcher icons + native splash).
+# Primary background = AppColors.background = Color(0xFF0A0E17).
+# Regenerate with:
+#   dart run flutter_launcher_icons
+#   dart run flutter_native_splash:create
+# ---------------------------------------------------------------------------
+flutter_launcher_icons:
+  image_path: "assets/images/icon.png"
+  android: true
+  ios: true
+  remove_alpha_ios: true
+  adaptive_icon_background: "#0A0E17"
+  adaptive_icon_foreground: "assets/images/icon.png"
+
+flutter_native_splash:
+  color: "#0A0E17"
+  image: "assets/images/splash_logo.png"
+  android_12:
+    color: "#0A0E17"
+    image: "assets/images/splash_logo.png"
+  ios: true
