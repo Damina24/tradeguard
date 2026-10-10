@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -8,6 +9,7 @@ import '../../../core/services/auth_provider.dart';
 import '../../../core/services/auth_repository.dart';
 import '../../../core/services/services.dart';
 import '../../../core/services/social_auth.dart';
+import '../../../core/services/telemetry_service.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_text_styles.dart';
 import '../../../core/widgets/disclaimer_note.dart';
@@ -105,6 +107,23 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
       if (outcome.needsEmailConfirmation) {
         _error = null;
         _toast('Check your inbox to confirm your email.');
+      } else if (outcome.error != null &&
+          provider == SocialProvider.google &&
+          outcome.code != null) {
+        // Self-diagnosing Google failure: the trader-safe message stays on
+        // screen, while the raw code goes to Crashlytics in release (as the
+        // `google_signin_code` custom key) and onto the snackbar in
+        // debug/profile so a developer can read it off the device.
+        if (kReleaseMode) {
+          TelemetryService.instance.recordNonFatal(
+            'google-signin-failed',
+            key: 'google_signin_code',
+            value: outcome.code!,
+          );
+          _error = outcome.error;
+        } else {
+          _error = '${outcome.error} (code ${outcome.code})';
+        }
       } else {
         _error = outcome.error;
       }

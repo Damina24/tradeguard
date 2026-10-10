@@ -58,6 +58,37 @@ void main() {
     });
   });
 
+  group('googleSignInHint', () {
+    test('code 7 maps to a connectivity hint', () {
+      expect(googleSignInHint('7'), 'Check your connection and retry');
+    });
+
+    test('codes 10, 12500 and 12502 map to a setup hint', () {
+      for (final String code in <String>['10', '12500', '12502']) {
+        expect(
+          googleSignInHint(code),
+          'Sign-in setup issue; contact support with this code',
+          reason: code,
+        );
+      }
+    });
+
+    test('testing-track codes map to an enablement hint', () {
+      for (final String code in <String>['403', 'access_denied']) {
+        expect(
+          googleSignInHint(code),
+          'This Google account is not enabled for testing yet',
+          reason: code,
+        );
+      }
+    });
+
+    test('unknown or missing codes fall back to generic copy', () {
+      expect(googleSignInHint('bogus'), isNull);
+      expect(googleSignInHint(null), isNull);
+    });
+  });
+
   group('MockAuthRepository.signInWithProvider', () {
     test('signs the demo trader in through the provider', () async {
       final MockSocialAuthService social = MockSocialAuthService();

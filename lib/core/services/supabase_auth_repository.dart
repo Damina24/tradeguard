@@ -116,7 +116,7 @@ class SupabaseAuthRepository implements AuthRepository {
       }
       return AuthOutcome.success(_toUser(user));
     } on SocialAuthException catch (e) {
-      return AuthOutcome.failure(e.message);
+      return AuthOutcome.failure(e.message, code: e.code);
     } on AuthException catch (e) {
       return AuthOutcome.failure(_friendlyIdToken(e.message));
     } catch (_) {

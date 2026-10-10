@@ -14,9 +14,10 @@ class AppUser {
 class AuthOutcome {
   const AuthOutcome.success(this.user)
       : error = null,
+        code = null,
         needsEmailConfirmation = false;
 
-  const AuthOutcome.failure(this.error)
+  const AuthOutcome.failure(this.error, {this.code})
       : user = null,
         needsEmailConfirmation = false;
 
@@ -24,16 +25,25 @@ class AuthOutcome {
   const AuthOutcome.confirmationRequired()
       : user = null,
         error = null,
+        code = null,
         needsEmailConfirmation = true;
 
   /// Generic success that carries no user (e.g. "reset email sent").
   const AuthOutcome.done()
       : user = null,
         error = null,
+        code = null,
         needsEmailConfirmation = false;
 
   final AppUser? user;
   final String? error;
+
+  /// Raw provider failure code (Google only) attached to a social sign-in
+  /// failure. `null` for every non-social outcome and for Apple. The
+  /// presentation layer turns it into a Crashlytics custom key in release and a
+  /// snackbar hint in debug/profile; it is never rendered to a trader verbatim.
+  final String? code;
+
   final bool needsEmailConfirmation;
 
   bool get isSuccess => error == null;
@@ -118,7 +128,7 @@ class MockAuthRepository implements AuthRepository {
       );
       return AuthOutcome.success(_user!);
     } on SocialAuthException catch (e) {
-      return AuthOutcome.failure(e.message);
+      return AuthOutcome.failure(e.message, code: e.code);
     }
   }
 

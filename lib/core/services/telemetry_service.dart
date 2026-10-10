@@ -80,6 +80,40 @@ class TelemetryService {
     }
   }
 
+  /// Records a non-fatal Crashlytics report for a self-diagnosing failure that
+  /// the UI already handled — e.g. a Google sign-in status code. [key] is
+  /// attached as a custom key so the report is filterable by that code.
+  ///
+  /// Best-effort and never throws: a build with no Firebase config degrades to
+  /// a no-op, exactly like the rest of this seam. The [key]/[value] pair must be
+  /// a non-PII status token (a code), never an email, name or account id.
+  void recordNonFatal(String reason, {String? key, Object? value}) {
+    final FirebaseCrashlytics? crashlytics = _crashlytics;
+    if (crashlytics == null) return;
+    unawaited(_recordNonFatal(crashlytics, reason, key, value));
+  }
+
+  Future<void> _recordNonFatal(
+    FirebaseCrashlytics crashlytics,
+    String reason,
+    String? key,
+    Object? value,
+  ) async {
+    try {
+      if (key != null && value != null) {
+        await crashlytics.setCustomKey(key, value);
+      }
+      await crashlytics.recordError(
+        Exception(reason),
+        null,
+        reason: reason,
+        fatal: false,
+      );
+    } catch (_) {
+      // Best-effort: a reporting failure must never surface to the trader.
+    }
+  }
+
   /// Test seam: injects a fake [AnalyticsLogger] without a Firebase platform.
   @visibleForTesting
   void debugAttachLogger(AnalyticsLogger logger) => _analytics = logger;

@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart' show PlatformException;
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:sign_in_with_apple/sign_in_with_apple.dart';
 
@@ -65,12 +66,45 @@ class SocialAuthResult {
 /// A sign-in failure whose [message] is safe to render for a trader. Plugin exceptions are mapped
 /// onto these, so no provider string is ever shown verbatim.
 class SocialAuthException implements Exception {
-  const SocialAuthException(this.message);
+  const SocialAuthException(this.message, {this.code});
 
   final String message;
 
+  /// Raw provider failure code (Google only) — e.g. `'10'` or `'access_denied'`.
+  ///
+  /// Never rendered to a trader in release. The presentation layer sends it to
+  /// Crashlytics as the `google_signin_code` custom key in release builds and
+  /// appends it to a snackbar in debug/profile, so a failure is self-diagnosing
+  /// without exposing an internal code to end users.
+  final String? code;
+
   @override
   String toString() => 'SocialAuthException: $message';
+}
+
+/// Trader-safe hint for a raw Google sign-in failure [code].
+///
+/// Google surfaces a mix of numeric status codes (`7`, `10`, `12500`, `12502`)
+/// and OAuth tokens (`403`, `access_denied`). Each maps to a short, actionable
+/// line a trader can act on. Unknown or missing codes return `null` so the
+/// caller falls back to the generic, still-safe copy.
+///
+/// Pure and dependency-free, so it is unit-tested without a platform channel.
+String? googleSignInHint(String? code) {
+  if (code == null) return null;
+  switch (code.trim().toLowerCase()) {
+    case '7':
+      return 'Check your connection and retry';
+    case '10':
+    case '12500':
+    case '12502':
+      return 'Sign-in setup issue; contact support with this code';
+    case '403':
+    case 'access_denied':
+      return 'This Google account is not enabled for testing yet';
+    default:
+      return null;
+  }
 }
 
 /// Platform-level social sign-in. Split out from the auth repository so repositories stay free of
@@ -172,7 +206,7 @@ class NativeSocialAuthService implements SocialAuthService {
             : AppConfig.googleServerClientId,
       );
     } on GoogleSignInException catch (e) {
-      throw SocialAuthException(_googleMessage(e.code));
+      throw _googleFailure(e);
     } catch (_) {
       // No `google-services.json` / `GoogleService-Info.plist`, or an unusable SHA-1 fingerprint.
       throw const SocialAuthException(
@@ -206,11 +240,15 @@ class NativeSocialAuthService implements SocialAuthService {
       if (e.code == GoogleSignInExceptionCode.canceled) {
         return const SocialAuthResult.cancelled();
       }
-      throw SocialAuthException(_googleMessage(e.code));
+      throw _googleFailure(e);
     } on SocialAuthException {
       rethrow;
-    } catch (_) {
-      throw const SocialAuthException('Google sign-in failed. Try again.');
+    } catch (error) {
+      final String? rawCode = _googleFailureCode(error);
+      throw SocialAuthException(
+        googleSignInHint(rawCode) ?? 'Google sign-in failed. Try again.',
+        code: rawCode,
+      );
     }
   }
 
@@ -271,6 +309,47 @@ class NativeSocialAuthService implements SocialAuthService {
       case GoogleSignInExceptionCode.unknownError:
         return 'Google sign-in failed. Try again.';
     }
+  }
+
+  /// Builds the trader-safe [SocialAuthException] for a Google failure while
+  /// capturing the raw code so the presentation layer can self-diagnose
+  /// (Crashlytics key in release, snackbar suffix in debug/profile).
+  ///
+  /// A mapped hint wins over the generic copy; an unmapped code falls back to
+  /// [_googleMessage] so the trader still sees actionable, non-technical text.
+  static SocialAuthException _googleFailure(GoogleSignInException e) {
+    final String? code = _googleFailureCode(e);
+    return SocialAuthException(
+      googleSignInHint(code) ?? _googleMessage(e.code),
+      code: code,
+    );
+  }
+
+  /// Extracts a raw provider failure code from a thrown [error].
+  ///
+  /// The numeric Google status codes (`7`, `10`, `12500`, `12502`) and OAuth
+  /// tokens (`403`, `access_denied`) surface either as a [PlatformException]'s
+  /// `code` or inside a [GoogleSignInException]'s `details` / `description`. An
+  /// unknown shape falls back to the plugin enum's name, so a non-empty code is
+  /// always available to send to Crashlytics.
+  static String? _googleFailureCode(Object? error) {
+    if (error is GoogleSignInException) {
+      final Object? details = error.details;
+      if (details is int) return details.toString();
+      if (details is String && details.trim().isNotEmpty) {
+        return details.trim();
+      }
+      if (details is Map) {
+        final Object? nested = details['code'] ?? details['statusCode'];
+        if (nested != null) return nested.toString();
+      }
+      // The enum name is the last resort — still a stable, non-empty code.
+      return error.code.name;
+    }
+    if (error is PlatformException) {
+      return error.code;
+    }
+    return null;
   }
 }
 

@@ -77,14 +77,14 @@ class AppConfig {
   /// Live, hosted legal pages (GitHub Pages, repo `Damina24/tradeguard-legal`).
   ///
   /// These are the ONLY public URLs a store reviewer or trader is pointed at, so
-  /// they must resolve. The privacy policy and account-deletion pages are live;
-  /// the terms page is not yet published on that host, so the Terms link falls
-  /// back to the same legal home page (which carries the effective date, contact
-  /// and the financial disclaimer) rather than to a 404. Update [termsUrl] to a
-  /// dedicated `…/terms` page the moment one is published — see the widget test
-  /// `legal_links_test.dart`, which pins the exact privacy/deletion URLs.
+  /// they must resolve. Privacy, Terms and account-deletion each have their own
+  /// dedicated page on that host; the Terms link is a real `…/terms` page, not a
+  /// fallback to the legal home. `legal_links_test.dart` pins each URL and
+  /// asserts Terms is distinct from Privacy, so they can never silently collapse
+  /// back onto one page again.
   static const String privacyUrl = 'https://damina24.github.io/tradeguard-legal/';
-  static const String termsUrl = 'https://damina24.github.io/tradeguard-legal/';
+  static const String termsUrl =
+      'https://damina24.github.io/tradeguard-legal/terms';
   static const String deleteAccountUrl =
       'https://damina24.github.io/tradeguard-legal/account-deletion';
 

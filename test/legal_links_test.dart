@@ -48,6 +48,17 @@ void main() {
       );
     });
 
+    test('terms of service points at the dedicated terms page', () {
+      expect(
+        AppConfig.termsUrl,
+        'https://damina24.github.io/tradeguard-legal/terms',
+      );
+    });
+
+    test('terms URL is distinct from the privacy policy URL', () {
+      expect(AppConfig.termsUrl, isNot(equals(AppConfig.privacyUrl)));
+    });
+
     test('account deletion points at the live deletion page', () {
       expect(
         AppConfig.deleteAccountUrl,
