@@ -20,7 +20,8 @@ class SupabaseTradeImportRepository implements TradeImportRepository {
     final List<Map<String, dynamic>> rows = await (_service.client
         .from('trades')
         .select('external_id')
-        .eq('account_id', accountId));
+        .eq('account_id', accountId))
+        .timeout(SupabaseService.networkTimeout);
     return rows
         .map((Map<String, dynamic> r) => r['external_id'] as String?)
         .whereType<String>()
@@ -56,7 +57,8 @@ class SupabaseTradeImportRepository implements TradeImportRepository {
     // and is filled by RLS/PostgREST, so it is deliberately absent from these rows.
     await _service.client
         .from('trades')
-        .upsert(rows, onConflict: 'account_id,external_id');
+        .upsert(rows, onConflict: 'account_id,external_id')
+        .timeout(SupabaseService.networkTimeout);
     return rows.length;
   }
 }

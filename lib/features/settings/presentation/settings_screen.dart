@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../../core/constants/app_config.dart';
 import '../../../core/constants/app_strings.dart';
@@ -62,9 +63,9 @@ class SettingsScreen extends ConsumerWidget {
           const Text('LEGAL', style: AppTextStyles.label),
           const SizedBox(height: 8),
           SettingsTiles.tile(Icons.privacy_tip_outlined, 'Privacy policy',
-              () => SettingsTiles.snack(context, AppConfig.privacyUrl),),
+              () => _open(context, AppConfig.privacyUrl),),
           SettingsTiles.tile(Icons.description_outlined, 'Terms of service',
-              () => SettingsTiles.snack(context, AppConfig.termsUrl),),
+              () => _open(context, AppConfig.termsUrl),),
           SettingsTiles.tile(
               Icons.warning_amber, 'Risk disclaimer', () => SettingsTiles.showDisclaimer(context),),
           const SizedBox(height: 16),
@@ -90,6 +91,27 @@ class SettingsScreen extends ConsumerWidget {
         ],
       ),
     );
+  }
+
+  /// Opens a legal page in the external browser.
+  ///
+  /// Legal links used to be shown in a SnackBar that only printed the URL —
+  /// a trader cannot tap raw text, so the page effectively never opened. This
+  /// hands the URL to the platform browser (same pattern the auth screen uses).
+  /// A failure to launch (no browser, or the launcher threw) is reported rather
+  /// than swallowed, so the tap never silently does nothing.
+  Future<void> _open(BuildContext context, String url) async {
+    try {
+      final bool launched =
+          await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+      if (!launched && context.mounted) {
+        SettingsTiles.snack(context, 'Could not open the link.');
+      }
+    } catch (_) {
+      if (context.mounted) {
+        SettingsTiles.snack(context, 'Could not open the link.');
+      }
+    }
   }
 
   /// Ends the session and returns to the auth screen.

@@ -23,7 +23,8 @@ class SupabaseAccountRepository implements AccountRepository {
             .from('broker_accounts')
             .select()
             .eq('is_active', true)
-            .order('created_at', ascending: true));
+            .order('created_at', ascending: true))
+        .timeout(SupabaseService.networkTimeout);
     final Map<String, AccountSnapshot> snaps = await _latestSnapshots();
     return rows
         .map(
@@ -40,7 +41,8 @@ class SupabaseAccountRepository implements AccountRepository {
         .select()
         .eq('account_id', accountId)
         .order('created_at', ascending: false)
-        .limit(1));
+        .limit(1))
+        .timeout(SupabaseService.networkTimeout);
     if (rows.isEmpty) {
       // No snapshot yet — the guard renders this as STALE rather than inventing numbers.
       return AccountSnapshot(
@@ -67,13 +69,18 @@ class SupabaseAccountRepository implements AccountRepository {
         .from('broker_accounts')
         .insert(_toRow(account))
         .select()
-        .single());
+        .single())
+        .timeout(SupabaseService.networkTimeout);
     return _merge(row, AccountSnapshot.fromAccount(account));
   }
 
   @override
   Future<void> deleteAccount(String accountId) async {
-    await _client.from('broker_accounts').delete().eq('id', accountId);
+    await _client
+        .from('broker_accounts')
+        .delete()
+        .eq('id', accountId)
+        .timeout(SupabaseService.networkTimeout);
   }
 
   @override
@@ -81,7 +88,8 @@ class SupabaseAccountRepository implements AccountRepository {
     await _client
         .from('broker_accounts')
         .update(<String, dynamic>{'equity_guard_enabled': enabled})
-        .eq('id', accountId);
+        .eq('id', accountId)
+        .timeout(SupabaseService.networkTimeout);
   }
 
   @override
@@ -91,7 +99,8 @@ class SupabaseAccountRepository implements AccountRepository {
     await _client
         .from('broker_accounts')
         .update(<String, dynamic>{'copy_enabled': enabled})
-        .eq('id', accountId);
+        .eq('id', accountId)
+        .timeout(SupabaseService.networkTimeout);
   }
 
   /// Latest snapshot per account. `equity_snapshots` is append-only and written once a minute, so
@@ -101,7 +110,8 @@ class SupabaseAccountRepository implements AccountRepository {
         .from('equity_snapshots')
         .select()
         .order('created_at', ascending: false)
-        .limit(2000));
+        .limit(2000))
+        .timeout(SupabaseService.networkTimeout);
     final Map<String, AccountSnapshot> out = <String, AccountSnapshot>{};
     for (final Map<String, dynamic> r in rows) {
       final String id = r['account_id'] as String;

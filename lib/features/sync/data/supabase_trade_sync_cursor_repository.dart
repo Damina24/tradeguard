@@ -21,7 +21,8 @@ class SupabaseTradeSyncCursorRepository implements TradeSyncCursorRepository {
         .select('account_id,last_synced_at,last_external_id,last_run_at,'
             'consecutive_failures')
         .eq('account_id', accountId)
-        .limit(1));
+        .limit(1))
+        .timeout(SupabaseService.networkTimeout);
     if (rows.isEmpty) return null;
     return _toCursor(rows.first);
   }
@@ -35,7 +36,7 @@ class SupabaseTradeSyncCursorRepository implements TradeSyncCursorRepository {
       'last_external_id': cursor.lastExternalId,
       'last_run_at': cursor.lastRunAt?.toUtc().toIso8601String(),
       'consecutive_failures': cursor.consecutiveFailures,
-    }, onConflict: 'account_id',));
+    }, onConflict: 'account_id',)).timeout(SupabaseService.networkTimeout);
   }
 
   @override
@@ -47,7 +48,8 @@ class SupabaseTradeSyncCursorRepository implements TradeSyncCursorRepository {
         .from('trade_sync_cursors')
         .select('account_id,last_synced_at,last_external_id,last_run_at,'
             'consecutive_failures')
-        .match(filters));
+        .match(filters))
+        .timeout(SupabaseService.networkTimeout);
     return rows.map(_toCursor).toList();
   }
 

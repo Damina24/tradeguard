@@ -50,7 +50,7 @@ class SupabaseCopySignalRepository implements CopySignalRepository {
           'risk_pct': CopySettings.clampRiskPct(riskPct),
           'mode': mode,
         },
-      );
+      ).timeout(SupabaseService.networkTimeout);
     } on FunctionsHttpException catch (e) {
       throw CopySignalException(_classify(e.status));
     } catch (_) {
@@ -108,7 +108,8 @@ class SupabaseCopySignalRepository implements CopySignalRepository {
         .from('signal_follows')
         .select('id')
         .inFilter('copy_status', <String>['pending', 'placed'])
-        .count(CountOption.exact);
+        .count(CountOption.exact)
+        .timeout(SupabaseService.networkTimeout);
     final int? count = res.count as int?;
     return count ?? 0;
   }

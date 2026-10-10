@@ -21,12 +21,14 @@ class SupabaseTradeRepository implements TradeRepository {
             .select()
             .order('close_time', ascending: false)
             .limit(limit))
+            .timeout(SupabaseService.networkTimeout)
         : await (_client
             .from('trades')
             .select()
             .eq('account_id', accountId)
             .order('close_time', ascending: false)
-            .limit(limit));
+            .limit(limit))
+            .timeout(SupabaseService.networkTimeout);
     return rows.map(Trade.fromJson).toList();
   }
 
@@ -43,6 +45,10 @@ class SupabaseTradeRepository implements TradeRepository {
       _patch(tradeId, <String, dynamic>{'screenshot_url': screenshotPath});
 
   Future<void> _patch(String tradeId, Map<String, dynamic> values) async {
-    await _client.from('trades').update(values).eq('id', tradeId);
+    await _client
+        .from('trades')
+        .update(values)
+        .eq('id', tradeId)
+        .timeout(SupabaseService.networkTimeout);
   }
 }

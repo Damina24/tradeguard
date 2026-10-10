@@ -27,7 +27,7 @@ class SupabaseChartAnalysisRepository
       res = await _client.functions.invoke(
         'ai-analyze-chart',
         body: <String, dynamic>{'image_url': imageUrl},
-      );
+      ).timeout(SupabaseService.networkTimeout);
     } on FunctionsHttpException catch (e) {
       throw ChartAnalysisException(_classify(e.status));
     } catch (_) {

@@ -207,7 +207,7 @@ class SupabaseBrokerConnectService implements BrokerConnectService {
       response = await _service.client.functions.invoke(
         'meta-connect',
         body: request.toFunctionBody(),
-      );
+      ).timeout(SupabaseService.networkTimeout);
     } catch (_) {
       throw const BrokerConnectException(
         'Could not reach the broker connect service. Try again shortly.',

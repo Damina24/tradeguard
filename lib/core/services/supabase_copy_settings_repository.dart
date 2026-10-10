@@ -26,7 +26,8 @@ class SupabaseCopySettingsRepository implements CopySettingsRepository {
     final List<Map<String, dynamic>> rows = await (_client
         .from('copy_settings')
         .select('live_consent,kill_switch,max_lots,max_concurrent_follows')
-        .limit(1));
+        .limit(1))
+        .timeout(SupabaseService.networkTimeout);
 
     // Absent row == defaults: the same fallback index.ts applies, so a trader
     // who has never saved a setting sees the same quartet on both sides.
@@ -54,6 +55,6 @@ class SupabaseCopySettingsRepository implements CopySettingsRepository {
         'updated_at': DateTime.now().toUtc().toIso8601String(),
       },
       onConflict: 'user_id',
-    );
+    ).timeout(SupabaseService.networkTimeout);
   }
 }

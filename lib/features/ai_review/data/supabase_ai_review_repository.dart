@@ -45,7 +45,8 @@ class SupabaseAiReviewRepository implements AiReviewRepository {
         .select()
         .eq('trade_id', tradeId)
         .eq('user_id', userId)
-        .limit(1));
+        .limit(1))
+        .timeout(SupabaseService.networkTimeout);
 
     if (rows.isEmpty) return null;
 
@@ -70,7 +71,7 @@ class SupabaseAiReviewRepository implements AiReviewRepository {
         // The body carries ONLY the trade id. No user id, no account id, no trade contents — the
         // function reads those from the database under the caller's own identity.
         body: <String, dynamic>{'trade_id': tradeId},
-      );
+      ).timeout(SupabaseService.networkTimeout);
     } on FunctionsHttpException catch (e) {
       // The STATUS is classified; the body is never shown. A function error body can name tables,
       // constraints, or echo model output back, none of which helps a trader and some of which

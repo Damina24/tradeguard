@@ -178,7 +178,7 @@ class SupabaseTradeScreenshotService implements TradeScreenshotService {
             path,
             bytes,
             fileOptions: FileOptions(contentType: mimeType, upsert: false),
-          );
+          ).timeout(SupabaseService.networkTimeout);
     } on StorageException {
       throw const TradeScreenshotFailure(
         'Could not upload that image. Check your connection and try again.',
@@ -197,7 +197,7 @@ class SupabaseTradeScreenshotService implements TradeScreenshotService {
     try {
       return await _client.storage.from(TradeScreenshots.bucket).download(
             path,
-          );
+          ).timeout(SupabaseService.networkTimeout);
     } on StorageException {
       throw const TradeScreenshotFailure(
         'Could not load that screenshot. Check your connection and try '

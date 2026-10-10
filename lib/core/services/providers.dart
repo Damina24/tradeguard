@@ -41,6 +41,15 @@ class AccountsNotifier extends StateNotifier<List<TradingAccount>> {
   Object? _error;
   Object? get error => _error;
 
+  /// True once the repository has answered at least once, successfully or not.
+  ///
+  /// [state] starts as an empty list, which on its own is ambiguous between "still
+  /// loading" and "you have no accounts". Without this the Guard screen cannot tell
+  /// a first load that is merely in flight from one that finished empty, and would
+  /// spin a loading indicator forever after a failure.
+  bool _loaded = false;
+  bool get loaded => _loaded;
+
   TradingAccount? byId(String id) {
     for (final TradingAccount a in state) {
       if (a.id == id) return a;
@@ -52,9 +61,16 @@ class AccountsNotifier extends StateNotifier<List<TradingAccount>> {
     try {
       final List<TradingAccount> rows = await _repo.fetchAccounts();
       _error = null;
+      _loaded = true;
       state = rows;
     } catch (e) {
       _error = e;
+      // `loaded` and `error` are plain fields, not part of `state`, so nothing would
+      // rebuild a screen still showing "loading". Publishing a fresh list gives the
+      // notifier a new identity to emit, which is what wakes the listener — without
+      // this a FIRST load that fails leaves the Guard screen spinning forever.
+      _loaded = true;
+      if (mounted) state = List<TradingAccount>.unmodifiable(state);
     }
   }
 

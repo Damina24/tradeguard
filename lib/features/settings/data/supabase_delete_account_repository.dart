@@ -26,7 +26,9 @@ class SupabaseDeleteAccountRepository implements DeleteAccountRepository {
     final dynamic response;
     try {
       // No body: the caller's identity comes from the verified bearer token, not the request.
-      response = await _service.client.functions.invoke('delete-account');
+      response = await _service.client.functions
+          .invoke('delete-account')
+          .timeout(SupabaseService.networkTimeout);
     } on FunctionsHttpException catch (e) {
       throw DeleteAccountException(_classify(e.status));
     } catch (_) {

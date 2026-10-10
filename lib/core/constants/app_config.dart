@@ -70,11 +70,23 @@ class AppConfig {
   static const String appleWebClientId =
       String.fromEnvironment('APPLE_WEB_CLIENT_ID', defaultValue: '');
 
-  static const String supportEmail = 'support@__PLACEHOLDER_DOMAIN__';
-  static const String privacyUrl = 'https://__PLACEHOLDER_DOMAIN__/privacy';
-  static const String termsUrl = 'https://__PLACEHOLDER_DOMAIN__/terms';
+  /// Support inbox shown on the live legal pages. Kept for parity with the
+  /// store listing; the in-app delete flow never needs it (it deletes directly).
+  static const String supportEmail = 'support@tradeguard.app';
+
+  /// Live, hosted legal pages (GitHub Pages, repo `Damina24/tradeguard-legal`).
+  ///
+  /// These are the ONLY public URLs a store reviewer or trader is pointed at, so
+  /// they must resolve. The privacy policy and account-deletion pages are live;
+  /// the terms page is not yet published on that host, so the Terms link falls
+  /// back to the same legal home page (which carries the effective date, contact
+  /// and the financial disclaimer) rather than to a 404. Update [termsUrl] to a
+  /// dedicated `…/terms` page the moment one is published — see the widget test
+  /// `legal_links_test.dart`, which pins the exact privacy/deletion URLs.
+  static const String privacyUrl = 'https://damina24.github.io/tradeguard-legal/';
+  static const String termsUrl = 'https://damina24.github.io/tradeguard-legal/';
   static const String deleteAccountUrl =
-      'https://__PLACEHOLDER_DOMAIN__/delete-account';
+      'https://damina24.github.io/tradeguard-legal/account-deletion';
 
   /// Explicit request for demo/mock mode: `--dart-define=USE_MOCK=true`.
   ///

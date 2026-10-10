@@ -94,7 +94,8 @@ class SupabasePriceBarRepository implements PriceBarRepository {
         .select('symbol,timeframe,ohlc,updated_at')
         .eq('symbol', request.symbol.toUpperCase())
         .eq('timeframe', request.timeframe.wire)
-        .limit(1));
+        .limit(1))
+        .timeout(SupabaseService.networkTimeout);
 
     if (rows.isEmpty) return null;
     final Map<String, dynamic> row = rows.first;
@@ -124,7 +125,7 @@ class SupabasePriceBarRepository implements PriceBarRepository {
           'symbol': request.symbol.toUpperCase(),
           'interval': request.timeframe.wire,
         },
-      );
+      ).timeout(SupabaseService.networkTimeout);
     } on FunctionsHttpException catch (e) {
       // The STATUS is classified; the body never is. A function error can name tables and constraints.
       throw PriceBarException(_classify(e.status));

@@ -12,6 +12,17 @@ class SupabaseService {
 
   static final SupabaseService instance = SupabaseService._();
 
+  /// Hard ceiling on every network call this client makes.
+  ///
+  /// Without a timeout a query that opens a socket but never receives a response (a stalled
+  /// mobile connection, a half-open keep-alive, a backend that accepted the request and then
+  /// stalled) leaves its `await` pending indefinitely. On the Guard screen that surfaced as an
+  /// infinite loading spinner: the repository future never completed, so the notifier never
+  /// advanced past its initial empty state. Thirty seconds is long enough for a slow cell
+  /// connection yet short enough that a trader sees an error state and a Retry button instead of
+  /// a spinner they must force-quit to escape.
+  static const Duration networkTimeout = Duration(seconds: 30);
+
   SupabaseClient? _client;
   bool _initialized = false;
 

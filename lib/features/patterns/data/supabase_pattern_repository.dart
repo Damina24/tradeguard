@@ -43,7 +43,8 @@ class SupabasePatternRepository implements PatternRepository {
         .from('v_patterns')
         .select()
         .eq('user_id', userId)
-        .order('n', ascending: false));
+        .order('n', ascending: false))
+        .timeout(SupabaseService.networkTimeout);
 
     return rows.map(_toRow).toList(growable: false);
   }

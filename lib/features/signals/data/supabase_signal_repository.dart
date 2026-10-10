@@ -45,7 +45,8 @@ class SupabaseSignalRepository implements SignalRepository {
         .from('signals')
         .select()
         .order('created_at', ascending: false)
-        .limit(limit));
+        .limit(limit))
+        .timeout(SupabaseService.networkTimeout);
 
     return rows.map(_toSignal).toList(growable: false);
   }
