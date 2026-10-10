@@ -1,5 +1,22 @@
+import 'package:flutter/foundation.dart' show kReleaseMode;
+
 /// Build-time configuration. Values come from `--dart-define-from-file`.
-/// When [supabaseUrl] is empty the app runs in MOCK mode (no backend needed).
+///
+/// ## Mode selection
+///
+/// Demo ("mock") mode is **opt-in**, never a silent fallback:
+///
+///   * `--dart-define=USE_MOCK=true` → demo mode, in *any* build flavour. This is
+///     the flag sales demos use, and the only way to get seeded data into a
+///     release build on purpose.
+///   * Release with no `USE_MOCK` → **never** demo. With `SUPABASE_URL` /
+///     `SUPABASE_ANON_KEY` present it runs live; with them missing it shows the
+///     fatal configuration screen instead of demo data (see [configMissing]).
+///   * Debug/profile with no `USE_MOCK` and no `SUPABASE_URL` → demo mode, which
+///     is the long-standing behaviour that lets the whole UI run with no keys.
+///
+/// `USE_MOCK` is the pre-existing define name (it already appears in every
+/// `env/*.json`); it is now actually read instead of being a dead key.
 class AppConfig {
   AppConfig._();
 
@@ -11,6 +28,10 @@ class AppConfig {
       String.fromEnvironment('METAAPI_TOKEN', defaultValue: '');
   static const String openAiKey =
       String.fromEnvironment('OPENAI_API_KEY', defaultValue: '');
+  /// ⚠️ DEAD KEYS — nothing reads these. The RevenueCat keys actually wired into
+  /// [RevenueCatConfig] are `REVENUECAT_APPLE_KEY` and `REVENUECAT_GOOGLE_KEY`;
+  /// see `features/paywall/data/revenuecat_config.dart` and
+  /// `docs/BACKEND_DEPLOY.md` §7 for the canonical release commands.
   static const String revenueCatIosKey =
       String.fromEnvironment('REVENUECAT_IOS_KEY', defaultValue: '');
   static const String revenueCatAndroidKey =
@@ -55,6 +76,73 @@ class AppConfig {
   static const String deleteAccountUrl =
       'https://__PLACEHOLDER_DOMAIN__/delete-account';
 
-  /// True when no real backend is configured.
-  static bool get useMock => supabaseUrl.isEmpty;
+  /// Explicit request for demo/mock mode: `--dart-define=USE_MOCK=true`.
+  ///
+  /// This is the *only* thing that may turn mock mode on in a release build. It
+  /// is already the name used by every `env/*.json`, so no second define is
+  /// introduced here.
+  static const bool mockModeRequested =
+      bool.fromEnvironment('USE_MOCK', defaultValue: false);
+
+  /// True when both halves of the Supabase client config are present.
+  ///
+  /// Both are required: a URL with no anon key cannot authenticate, and an anon
+  /// key with no URL has nowhere to send it. Either one alone is not a
+  /// configuration.
+  static bool get hasSupabaseConfig =>
+      supabaseUrl.trim().isNotEmpty && supabaseAnonKey.trim().isNotEmpty;
+
+  /// True for `--release` builds only (not profile).
+  static bool get isReleaseBuild => kReleaseMode;
+
+  /// Pure mode selection, extracted so the rule is unit-testable without
+  /// compiling a second flavour of the app.
+  ///
+  ///   * An explicit `USE_MOCK=true` always wins — a demo build is a deliberate
+  ///     build, and the flag must work identically in every flavour.
+  ///   * A **release** build never falls back to demo data on its own.
+  ///   * Debug/profile keep the original behaviour: no backend configured means
+  ///     run the seeded mocks, so `flutter run` works with no keys at all.
+  static bool resolveUseMock({
+    required bool mockRequested,
+    required bool hasSupabaseConfig,
+    required bool isRelease,
+  }) {
+    if (mockRequested) return true;
+    if (isRelease) return false;
+    return !hasSupabaseConfig;
+  }
+
+  /// Pure fatal-configuration rule: a release build that neither asked for demo
+  /// mode nor carries a usable Supabase config must stop, not show demo data.
+  static bool resolveConfigMissing({
+    required bool mockRequested,
+    required bool hasSupabaseConfig,
+    required bool isRelease,
+  }) =>
+      isRelease && !mockRequested && !hasSupabaseConfig;
+
+  /// True when running against the offline mocks. See [resolveUseMock].
+  static bool get useMock => resolveUseMock(
+        mockRequested: mockModeRequested,
+        hasSupabaseConfig: hasSupabaseConfig,
+        isRelease: isReleaseBuild,
+      );
+
+  /// True when this build must show the fatal configuration screen instead of
+  /// starting the app. Only reachable in release builds.
+  static bool get configMissing => resolveConfigMissing(
+        mockRequested: mockModeRequested,
+        hasSupabaseConfig: hasSupabaseConfig,
+        isRelease: isReleaseBuild,
+      );
+
+  /// Human-readable list of what is missing, for the fatal screen. Empty when
+  /// nothing is missing.
+  static List<String> get missingConfigKeys {
+    final List<String> missing = <String>[];
+    if (supabaseUrl.trim().isEmpty) missing.add('SUPABASE_URL');
+    if (supabaseAnonKey.trim().isEmpty) missing.add('SUPABASE_ANON_KEY');
+    return missing;
+  }
 }

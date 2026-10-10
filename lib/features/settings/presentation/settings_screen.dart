@@ -5,6 +5,8 @@ import 'package:go_router/go_router.dart';
 import '../../../core/constants/app_config.dart';
 import '../../../core/constants/app_strings.dart';
 import '../../../core/models/account.dart';
+import '../../../core/services/auth_provider.dart';
+import '../../../core/services/auth_repository.dart';
 import '../../../core/services/providers.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_text_styles.dart';
@@ -20,6 +22,8 @@ class SettingsScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final List<TradingAccount> accounts = ref.watch(accountsProvider);
+    final AppUser? user = ref.watch(authProvider);
+    final bool isPro = ref.watch(purchasesProvider).isPro;
 
     return Scaffold(
       appBar: AppBar(title: const Text('Settings')),
@@ -27,6 +31,8 @@ class SettingsScreen extends ConsumerWidget {
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
         children: <Widget>[
           SettingsTiles.profile(
+            email: user?.email,
+            isPro: isPro,
             onUpgrade: () => Navigator.of(context).push(
               MaterialPageRoute<void>(builder: (_) => const PaywallScreen()),
             ),
@@ -64,8 +70,7 @@ class SettingsScreen extends ConsumerWidget {
           const SizedBox(height: 16),
           const DisclaimerNote(),
           const SizedBox(height: 20),
-          SettingsTiles.tile(Icons.logout, 'Sign out',
-              () => SettingsTiles.snack(context, 'Signed out (demo).'),),
+          SettingsTiles.tile(Icons.logout, 'Sign out', () => _signOut(context, ref)),
           SettingsTiles.tile(
             Icons.delete_forever,
             'Delete account',
@@ -85,6 +90,20 @@ class SettingsScreen extends ConsumerWidget {
         ],
       ),
     );
+  }
+
+  /// Ends the session and returns to the auth screen.
+  ///
+  /// Clearing the session is the real work: [AuthNotifier.signOut] sets the user
+  /// to null, which pings the router's refresh notifier, and `AppRouter.redirect`
+  /// then sends the app to `/auth` on its own. The explicit `go` below covers the
+  /// case where Settings is mounted without a router (a modal, or a widget test),
+  /// where no redirect runs — there it is simply skipped, because the session has
+  /// already been cleared and that is the part the trader can observe.
+  Future<void> _signOut(BuildContext context, WidgetRef ref) async {
+    await ref.read(authProvider.notifier).signOut();
+    if (!context.mounted) return;
+    GoRouter.maybeOf(context)?.go('/auth');
   }
 
   Future<void> _connect(BuildContext context, WidgetRef ref) async {

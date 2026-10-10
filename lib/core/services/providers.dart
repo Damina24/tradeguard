@@ -513,9 +513,11 @@ final FutureProviderFamily<Uint8List?, String> tradeScreenshotBytesProvider =
 /// it would churn every import for no behavioural gain.
 final Provider<List<Signal>> signalsProvider = Provider<List<Signal>>((Ref ref) {
   // Legacy alias: the screen reads `signalFeedProvider` directly, but older
-  // widgets and tests may still watch this. It mirrors the same seed so both
-  // paths can never disagree.
-  return MockData.signals();
+  // widgets and tests may still watch this. In demo mode it mirrors the same
+  // seed the mock repository serves, so both paths can never disagree. In live
+  // mode it must stay EMPTY: `MockData` is seeded demo content, and handing it
+  // to a live widget would show a real trader fabricated operator signals.
+  return kUseMock ? MockData.signals() : const <Signal>[];
 });
 
 /// ---- Trade review (task 2.3) ----

@@ -69,10 +69,18 @@ supabase db push                    # after keys configured
 supabase functions deploy guard-check sync-trades ai-review ai-analyze-chart copy-signal market-bars
 ```
 
-## App runs in MOCK mode by default
+## App runs in MOCK mode only when asked
 
-If `SUPABASE_URL` is not set, the app uses `lib/core/services/mock_*` services with seeded
-demo data (EVAL $100k FTMO, FUNDED $50k). This lets the whole UI run without any keys.
+Debug and profile builds fall back to `lib/core/services/mock_*` services with seeded
+demo data (EVAL $100k FTMO, FUNDED $50k) when no backend is configured. This lets the
+whole UI run without any keys.
+
+**Release builds never fall back on their own.** Demo mode is opt-in via
+`--dart-define=USE_MOCK=true` (the pre-existing define name in `env/*.json`). A release
+build with neither `USE_MOCK=true` nor both `SUPABASE_URL` + `SUPABASE_ANON_KEY` shows a
+fatal "App configuration missing" screen instead of demo data.
+
+Canonical build commands: `docs/BACKEND_DEPLOY.md` §7.
 
 ## Compliance guardrails (do not violate)
 

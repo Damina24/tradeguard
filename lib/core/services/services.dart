@@ -38,8 +38,9 @@ import '../../features/paywall/data/purchase_repository.dart';
 
 /// Single place that decides whether the app talks to Supabase or to the in-memory mocks.
 ///
-/// [AppConfig.useMock] is true whenever `SUPABASE_URL` is empty, so an unconfigured checkout
-/// boots with demo data and never throws.
+/// [AppConfig.useMock] is true when demo mode was explicitly requested with `USE_MOCK=true`, or
+/// when a debug/profile build has no backend configured. It is **never** true just because a
+/// release build was compiled without keys — see [AppConfig.resolveUseMock].
 class Services {
   Services._();
 

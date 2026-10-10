@@ -6,16 +6,35 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'core/constants/app_config.dart';
 import 'core/constants/app_strings.dart';
 import 'core/router/app_router.dart';
 import 'core/services/services.dart';
 import 'core/services/telemetry_service.dart';
 import 'core/theme/app_theme.dart';
+import 'core/widgets/fatal_config_screen.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await runZonedGuarded<Future<void>>(
     () async {
+      // A release build with no usable Supabase config stops here, before any
+      // backend, telemetry or router work. It must NOT fall back to demo data:
+      // a release APK is what a trader installs, and showing them seeded
+      // accounts looks exactly like their real account vanished. Nothing on the
+      // device can fix a missing compile-time key, so say so and stop.
+      if (AppConfig.configMissing) {
+        runApp(
+          MaterialApp(
+            title: AppStrings.storeTitle,
+            debugShowCheckedModeBanner: false,
+            theme: AppTheme.dark,
+            home: const FatalConfigScreen(),
+          ),
+        );
+        return;
+      }
+
       // Firebase first, inside the guarded zone: Crashlytics' zone handler and
       // Analytics both read the default app, so it must exist before either is
       // touched. `firebase_core` owns native init, so AppDelegate.swift is left

@@ -9,7 +9,12 @@ import '../../../core/theme/app_text_styles.dart';
 class SettingsTiles {
   SettingsTiles._();
 
-  static Widget profile({required VoidCallback onUpgrade}) => Container(
+  static Widget profile({
+    required VoidCallback onUpgrade,
+    String? email,
+    bool isPro = false,
+  }) =>
+      Container(
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
           color: AppColors.surface,
@@ -27,9 +32,14 @@ class SettingsTiles {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: <Widget>[
-                  const Text('Demo Trader', style: AppTextStyles.title),
                   Text(
-                    AppConfig.useMock ? 'Free plan • demo mode' : 'Free plan',
+                    AppConfig.useMock ? 'Demo Trader' : (email ?? 'TradeGuard'),
+                    style: AppTextStyles.title,
+                  ),
+                  Text(
+                    AppConfig.useMock
+                        ? 'Free plan • demo mode'
+                        : (isPro ? 'Pro plan' : 'Free plan'),
                     style: AppTextStyles.muted,
                   ),
                 ],

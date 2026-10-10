@@ -1,7 +1,10 @@
 # BACKEND_DEPLOY.md — taking TradeGuard off mock mode 🧑
 
-Everything here needs credentials only you can create, which is why the app boots in **mock mode**
-with seeded demo data. Work top to bottom; each step is verifiable on its own.
+Everything here needs credentials only you can create. In **debug and profile** builds the app boots
+in **mock mode** with seeded demo data when no backend is configured, so the UI is exercisable with
+no keys. A **release** build never does that: it either runs live, shows the fatal configuration
+screen, or is built for a sales demo with `USE_MOCK=true` (§7). Work top to bottom; each step is
+verifiable on its own.
 
 Order matters: the schema must exist before functions can talk to it, and the Vault secrets must
 exist before the cron job can fire.
@@ -408,8 +411,109 @@ copy env\dev.example.json env\dev.json      # fill in every value; env\ is git-i
 flutter run --dart-define-from-file=env/dev.json
 ```
 
-With `SUPABASE_URL` set, `AppConfig.useMock` flips to false: real auth, real accounts, and the Guard
-screen reads the newest `equity_snapshots` row instead of seeded demo numbers.
+With `SUPABASE_URL` **and** `SUPABASE_ANON_KEY` set, `AppConfig.useMock` flips to false: real auth,
+real accounts, and the Guard screen reads the newest `equity_snapshots` row instead of seeded demo
+numbers.
+
+---
+
+## 7. Release build commands (the only supported ones)
+
+> **Read this before shipping.** Every value below is baked into the binary at compile time, so a
+> missing `--dart-define` is not something a user can fix after installing. Get the names exactly
+> right — these are the names the code actually reads (see `lib/core/constants/app_config.dart` and
+> `lib/features/paywall/data/revenuecat_config.dart`).
+
+### Required defines
+
+| Define | Required | Where it is read |
+|---|---|---|
+| `SUPABASE_URL` | **yes** | `AppConfig.supabaseUrl` |
+| `SUPABASE_ANON_KEY` | **yes** | `AppConfig.supabaseAnonKey` |
+| `REVENUECAT_GOOGLE_KEY` | **yes for Android** | `RevenueCatConfig.googleKey` |
+| `REVENUECAT_APPLE_KEY` | **yes for iOS** | `RevenueCatConfig.appleKey` |
+| `METAAPI_TOKEN` | live copy-trading only | `AppConfig.metaApiToken` |
+| `OPENAI_API_KEY` | AI features only | `AppConfig.openAiKey` |
+| `GOOGLE_SERVER_CLIENT_ID` | Google sign-in on Android | `AppConfig.googleServerClientId` |
+| `GOOGLE_IOS_CLIENT_ID` | Google sign-in on iOS | `AppConfig.googleIosClientId` |
+| `APPLE_WEB_CLIENT_ID` | Apple sign-in on Android | `AppConfig.appleWebClientId` |
+| `TWELVEDATA_KEY` | **never** — server-side only | deliberately unread |
+
+⚠️ `REVENUECAT_IOS_KEY` and `REVENUECAT_ANDROID_KEY` in `env/*.json` are **dead keys** — nothing
+reads them. The paywall reads `REVENUECAT_APPLE_KEY` and `REVENUECAT_GOOGLE_KEY`. Passing only the
+dead pair produces a build whose paywall silently has no offerings.
+
+⚠️ `TWELVEDATA_KEY` must stay out of every build: anything passed via `--dart-define` ships inside
+the APK/AAB. It belongs in `supabase secrets` (§3) and is read only by the `market-bars` function.
+
+### Release APK (Android)
+
+```powershell
+flutter build apk --release `
+  --dart-define=SUPABASE_URL=https://<project-ref>.supabase.co `
+  --dart-define=SUPABASE_ANON_KEY=<anon public key> `
+  --dart-define=REVENUECAT_GOOGLE_KEY=goog_<android key>
+```
+
+### Release appbundle (Android — what Play Console wants)
+
+```powershell
+flutter build appbundle --release `
+  --dart-define=SUPABASE_URL=https://<project-ref>.supabase.co `
+  --dart-define=SUPABASE_ANON_KEY=<anon public key> `
+  --dart-define=REVENUECAT_GOOGLE_KEY=goog_<android key>
+```
+
+### Release IPA (iOS — via Codemagic)
+
+```bash
+flutter build ipa --release \
+  --dart-define=SUPABASE_URL=https://<project-ref>.supabase.co \
+  --dart-define=SUPABASE_ANON_KEY=<anon public key> \
+  --dart-define=REVENUECAT_APPLE_KEY=appl_<ios key>
+```
+
+A cross-platform release build may carry both store keys; each platform reads only its own, so the
+extra one is inert.
+
+### Optional extras for a full release build
+
+Append these to the command above when the corresponding feature must work:
+
+```powershell
+  --dart-define=METAAPI_TOKEN=<metaapi token> `
+  --dart-define=OPENAI_API_KEY=sk-<openai key> `
+  --dart-define=GOOGLE_SERVER_CLIENT_ID=<google web client id> `
+  --dart-define=GOOGLE_IOS_CLIENT_ID=<google ios client id> `
+  --dart-define=APPLE_WEB_CLIENT_ID=com.tradeguard.app.web
+```
+
+### Demo / sales build (seeded data, on purpose)
+
+The **only** way to get seeded demo data into a release build:
+
+```powershell
+flutter build apk --release --dart-define=USE_MOCK=true
+```
+
+`USE_MOCK` is an explicit opt-in that wins in every build flavour. Demo mode auto-signs-in a demo
+user, so the app opens straight to Guard with the seeded EVAL/FUNDED accounts — never hand this
+build to a real trader, and never ship it to a store listing.
+
+### What a release build does with no defines at all
+
+| `SUPABASE_URL` + `SUPABASE_ANON_KEY` | `USE_MOCK` | Release behaviour |
+|---|---|---|
+| both present | absent | **Live.** Real auth, real accounts. |
+| either missing | absent | **Fatal screen:** "App configuration missing — rebuild with required keys". No demo data. |
+| either missing | `true` | **Demo.** Seeded data, auto-signed-in demo user. |
+
+The fatal screen exists because the previous behaviour — silently falling back to demo data — meant
+a release APK built without keys opened on seeded accounts and an auto-signed-in demo user, which
+looks exactly like a trader's real account having vanished.
+
+Debug and profile builds are unaffected: with no backend configured they still boot the seeded mocks,
+which is what makes `flutter run` work with no keys.
 
 ---
 
@@ -417,6 +521,10 @@ screen reads the newest `equity_snapshots` row instead of seeded demo numbers.
 
 | Symptom | Cause / fix |
 |---|---|
+| Release APK shows "App configuration missing" | `SUPABASE_URL` / `SUPABASE_ANON_KEY` missing from the build command. Rebuild per §7. Not fixable on the device — the keys are compile-time. |
+| Release APK opens on demo accounts with no sign-in screen | Built without the required defines *before* this guard existed, or built with `USE_MOCK=true`. Rebuild per §7 without `USE_MOCK`. |
+| Paywall shows "No subscription options" on a release build | `REVENUECAT_GOOGLE_KEY` / `REVENUECAT_APPLE_KEY` missing, or the offering is not configured in RevenueCat. Check you used the live names, not the dead `REVENUECAT_ANDROID_KEY` / `REVENUECAT_IOS_KEY`. |
+| Settings → Sign out appears to do nothing | Fixed: it used to only show a SnackBar. It now clears the session and routes to `/auth`. |
 | `{"ok":false,"error":"Unauthorized"}` from `guard-check` | Bearer missing, or not the `service_role` key. With `verify_jwt = true` the platform rejects an anon key here too. |
 | `cron.job` empty after `db push` | pg_cron unavailable on the plan, or the migration failed — read the `supabase db push` output. |
 | Job runs, `snapshots: 0` | No account has both `is_active = true` and `equity_guard_enabled = true`. |
