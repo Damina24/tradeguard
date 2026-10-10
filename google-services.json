@@ -1,0 +1,54 @@
+{
+  "project_info": {
+    "project_number": "880718744829",
+    "project_id": "strategy-tracker-cb579",
+    "storage_bucket": "strategy-tracker-cb579.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:880718744829:android:6d448f52ee0e26d8164294",
+        "android_client_info": {
+          "package_name": "com.tradeguard.app"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "880718744829-954784p24ri41816n0bqif6ib41o34p8.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.tradeguard.app",
+            "certificate_hash": "2a64e1e2844776663e8456e4e59bef352604c7c7"
+          }
+        },
+        {
+          "client_id": "880718744829-fskgmtbd3kkm8v5b5dcp7tn98ojtkmtn.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCuEg8N0I6G0iFnWNfwSb1kGPhHcHQc8iU"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "880718744829-fskgmtbd3kkm8v5b5dcp7tn98ojtkmtn.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "880718744829-u86t0hkpkdbbe5upfomrgm1s97peg7im.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.tradeguard.app"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
