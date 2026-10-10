@@ -37,6 +37,7 @@ ios/Runner.xcodeproj/xcuserdata/
 
 # Secrets / platform config
 android/key.properties
+key.properties
 *.jks
 *.keystore
 
