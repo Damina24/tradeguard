@@ -6,9 +6,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/account.dart';
 import '../models/copy_settings.dart';
 import '../models/guard_status.dart';
+import '../models/live_account.dart';
 import '../models/signal.dart';
 import '../models/trade.dart';
 import '../../features/journal/data/trade_screenshot_service.dart';
+import '../../features/guard/data/live_account_repository.dart';
 import '../../features/settings/data/delete_account_repository.dart';
 import '../../features/journal/domain/trade_grade.dart';
 import '../../features/journal/domain/trade_metrics.dart';
@@ -403,6 +405,25 @@ final Provider<GuardStatus?> guardStatusProvider = Provider<GuardStatus?>((Ref r
   final TradingAccount? account = ref.watch(selectedAccountProvider);
   if (account == null) return null;
   return GuardStatus.compute(account);
+});
+
+/// ---- Live account (balance, equity, open positions) ----
+
+/// The `LiveAccountRepository` seam: mock in demo mode, Supabase/Edge Function
+/// otherwise. Overridable in widget tests with a seeded fake.
+final Provider<LiveAccountRepository> liveAccountRepositoryProvider =
+    Provider<LiveAccountRepository>((Ref ref) => Services.instance.liveAccounts);
+
+/// Live account data for one account id.
+///
+/// A [FutureProvider.family] rather than a value on the accounts notifier, so a
+/// slow or failed live read can NEVER block or corrupt the guard math: the
+/// dashboard renders this in its own loading/error/empty states while the guard
+/// cards below keep rendering from the persisted account. [autoDispose] frees the
+/// snapshot when the trader switches tabs or accounts.
+final AutoDisposeFutureProviderFamily<LiveAccountData, String> liveAccountProvider =
+    FutureProvider.autoDispose.family<LiveAccountData, String>((Ref ref, String accountId) {
+  return ref.watch(liveAccountRepositoryProvider).fetchLive(accountId);
 });
 
 /// ---- Trades ----

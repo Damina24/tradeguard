@@ -28,6 +28,14 @@ verify_jwt = true
 [functions.meta-connect]
 verify_jwt = true
 
+# sync-account-data is user-facing (a trader opens the Guard dashboard), so it uses
+# the ai-review / market-bars shape: the platform verifies the JWT and the function
+# additionally resolves the caller with GoTrue from their own bearer token. It must
+# NOT use the service-role gate that guard-check / sync-trades use — those are cron
+# jobs with no user session. METAAPI_TOKEN is read server-side only, never returned.
+[functions.sync-account-data]
+verify_jwt = true
+
 [functions.ai-review]
 verify_jwt = true
 

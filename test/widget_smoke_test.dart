@@ -22,6 +22,14 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('DAILY LOSS USED'), findsOneWidget);
+    // The live-account section sits above the guard metrics now, so the metric
+    // cards can start below the fold on a short test surface. Scroll them into
+    // view (same pattern the STOP control uses below) before asserting.
+    await tester.scrollUntilVisible(
+      find.text('DRAWDOWN DISTANCE'),
+      300,
+      scrollable: find.byType(Scrollable).first,
+    );
     expect(find.text('DRAWDOWN DISTANCE'), findsOneWidget);
 
     // The emergency-stop control sits at the bottom of the scroll view, so

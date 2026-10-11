@@ -14,6 +14,9 @@ import '../../features/signals/data/supabase_signal_repository.dart';
 import '../../features/chart_analysis/data/chart_analysis_repository.dart';
 import '../../features/chart_analysis/data/mock_chart_analysis_repository.dart';
 import '../../features/chart_analysis/data/supabase_chart_analysis_repository.dart';
+import '../../features/guard/data/live_account_repository.dart';
+import '../../features/guard/data/mock_live_account_repository.dart';
+import '../../features/guard/data/supabase_live_account_repository.dart';
 import '../../features/journal/data/trade_screenshot_service.dart';
 import '../../features/signals/data/copy_signal_repository.dart';
 import '../../features/signals/data/mock_copy_signal_repository.dart';
@@ -56,6 +59,14 @@ class Services {
   late final AccountRepository accounts = isMock
       ? MockAccountRepository()
       : SupabaseAccountRepository();
+
+  /// Live account reads (balance, equity, connection, open positions) for the
+  /// Guard dashboard. Mock mode answers from a seeded snapshot so the live
+  /// section renders offline; live mode proxies through the `sync-account-data`
+  /// Edge Function so the MetaAPI token never reaches the client.
+  late final LiveAccountRepository liveAccounts = isMock
+      ? const MockLiveAccountRepository()
+      : SupabaseLiveAccountRepository();
 
   late final TradeRepository trades = isMock
       ? MockTradeRepository()

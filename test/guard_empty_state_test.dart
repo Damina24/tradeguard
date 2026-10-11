@@ -96,7 +96,20 @@ void main() {
     );
     await tester.pumpAndSettle();
 
+    // The live-account section now sits above the guard metrics, so on the short
+    // default test surface the metric cards start below the fold. Scroll them in
+    // before asserting (ListView builds children lazily).
+    await tester.scrollUntilVisible(
+      find.text('DRAWDOWN DISTANCE'),
+      300,
+      scrollable: find.byType(Scrollable).first,
+    );
     expect(find.text('DRAWDOWN DISTANCE'), findsOneWidget);
+    await tester.scrollUntilVisible(
+      find.text('TO TARGET'),
+      300,
+      scrollable: find.byType(Scrollable).first,
+    );
     expect(find.text('TO TARGET'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });

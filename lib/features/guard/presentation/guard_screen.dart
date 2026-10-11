@@ -13,6 +13,7 @@ import '../../../core/utils/formatters.dart';
 import '../../../core/widgets/account_chip.dart';
 import '../widgets/daily_loss_card.dart';
 import '../widgets/equity_spark_card.dart';
+import '../widgets/live_account_card.dart';
 import '../widgets/metric_card.dart';
 import '../widgets/state_banner.dart';
 import '../widgets/today_card.dart';
@@ -48,6 +49,13 @@ class GuardScreen extends ConsumerWidget {
             onPressed: () {
               ref.read(accountsProvider.notifier).refresh();
               ref.invalidate(guardStatusProvider);
+              // Re-pull the live broker read for the selected account so a manual
+              // refresh also refreshes balance/equity/positions, not just the guard.
+              final TradingAccount? current =
+                  ref.read(selectedAccountProvider);
+              if (current != null) {
+                ref.invalidate(liveAccountProvider(current.id));
+              }
             },
             icon: const Icon(Icons.refresh),
             tooltip: 'Refresh',
@@ -115,6 +123,10 @@ class GuardScreen extends ConsumerWidget {
       onRefresh: () async {
         await Future<void>.delayed(const Duration(milliseconds: 400));
         ref.invalidate(guardStatusProvider);
+        final TradingAccount? current = ref.read(selectedAccountProvider);
+        if (current != null) {
+          ref.invalidate(liveAccountProvider(current.id));
+        }
       },
       child: ListView(
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
@@ -135,6 +147,13 @@ class GuardScreen extends ConsumerWidget {
           ),
           const SizedBox(height: 8),
           StateBanner(status: status),
+          const SizedBox(height: 16),
+          // Live broker read: balance, equity, connection health and open
+          // positions. Its own loading/error/empty states, so a slow live fetch
+          // never blocks the guard cards below (which run off the persisted
+          // account, not this snapshot). `status.account` is the selected account
+          // and is non-null here (a null status returned early above).
+          LiveAccountCard(accountId: status.account.id),
           const SizedBox(height: 16),
           DailyLossCard(status: status),
           const SizedBox(height: 16),

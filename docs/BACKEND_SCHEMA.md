@@ -270,6 +270,7 @@ roadmap's "setup leaks"; it needs a view revision first, not a client-side roll-
 | `meta-connect` | HTTP (auth) | register MetaAPI account, return id |
 | `guard-check` | cron 1/min (pg_cron, migration 0004) | snapshot equity, compute guard, push 70/90, prune >30d |
 | `sync-trades` | cron 5/min (pg_cron, migration 0005) | pull deals → upsert trades on `(account_id, external_id)`, advance `trade_sync_cursors` |
+| `sync-account-data` | HTTP (auth) | live balance/equity/connection + open positions for the Guard dashboard (on demand) |
 | `ai-review` | HTTP (auth) | OpenAI trade review JSON |
 | `market-bars` | HTTP (auth) | TwelveData OHLC → normalise → upsert `prices_cache` (task 2.6) |
 | `ai-analyze-chart` | HTTP (auth) | OpenAI vision → plan JSON |
@@ -295,6 +296,8 @@ POST /functions/v1/meta-connect       {login, password, server, platform} -> {me
 GET  /functions/v1/guard-status?account_id= -> {daily_used_pct, daily_left, dd_distance,
                                                 target_left_pct, equity, state, as_of}
 POST /functions/v1/sync-trades        {account_id} -> {imported, updated}
+POST /functions/v1/sync-account-data  {account_id} -> {balance, equity, connection,
+                                                linked, positions[], as_of}
 POST /functions/v1/ai-review          {trade_id} -> {summary, leak, score, suggestions[]}
 POST /functions/v1/market-bars          {symbol, interval} -> {symbol, interval, bars[], as_of}
 POST /functions/v1/ai-analyze-chart   {image_url} -> {bias, levels[], entry, sl, tp[]}

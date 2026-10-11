@@ -14,11 +14,24 @@ void main() {
       await tester.pumpWidget(const ProviderScope(child: TradeGuardApp()));
       await tester.pumpAndSettle();
 
-      expect(find.text('DAILY LOSS USED'), findsOneWidget);
-      expect(find.text('DRAWDOWN DISTANCE'), findsOneWidget);
       expect(find.text('FTMO EVAL 100K'), findsOneWidget);
       // The five-tab shell is mounted, so no redirect to /auth happened.
       expect(find.byType(NavigationBar), findsOneWidget);
+      // The live-account section now sits above the guard metrics, so on the
+      // default test surface they start below the fold. Scroll them in (the
+      // ListView builds children lazily) before asserting.
+      await tester.scrollUntilVisible(
+        find.text('DAILY LOSS USED'),
+        300,
+        scrollable: find.byType(Scrollable).first,
+      );
+      expect(find.text('DAILY LOSS USED'), findsOneWidget);
+      await tester.scrollUntilVisible(
+        find.text('DRAWDOWN DISTANCE'),
+        300,
+        scrollable: find.byType(Scrollable).first,
+      );
+      expect(find.text('DRAWDOWN DISTANCE'), findsOneWidget);
     });
 
     testWidgets('switching account keeps the guard rendering', (
@@ -35,7 +48,17 @@ void main() {
       await tester.pumpAndSettle();
 
       // Selection still resolves to a real account, so the guard does not fall back to a spinner.
+      await tester.scrollUntilVisible(
+        find.text('DAILY LOSS USED'),
+        300,
+        scrollable: find.byType(Scrollable).first,
+      );
       expect(find.text('DAILY LOSS USED'), findsOneWidget);
+      await tester.scrollUntilVisible(
+        find.text('DRAWDOWN DISTANCE'),
+        300,
+        scrollable: find.byType(Scrollable).first,
+      );
       expect(find.text('DRAWDOWN DISTANCE'), findsOneWidget);
     });
   });

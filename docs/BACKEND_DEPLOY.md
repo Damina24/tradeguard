@@ -108,7 +108,32 @@ our metered allowance from outside the product. See the task 2.6 notes in
 or `\n` breaks the secret.
 
 ```bash
-supabase functions deploy guard-check sync-trades meta-connect
+supabase functions deploy guard-check sync-trades meta-connect sync-account-data
+```
+
+### Fire `sync-account-data` once by hand
+
+`sync-account-data` is the live read behind the Guard dashboard (balance, equity, connection,
+open positions). It is USER-facing, so it takes the signed-in user's JWT, not the service role:
+
+```bash
+curl -X POST "https://<project-ref>.supabase.co/functions/v1/sync-account-data" \
+  -H "Authorization: Bearer <user_jwt>" \
+  -H "apikey: <anon_key>" \
+  -H "Content-Type: application/json" -d '{"account_id":"<uuid>"}'
+# → {"ok":true,"account_id":"…","balance":103450,"equity":103712.4,
+#    "connection":"connected","linked":true,"positions":[…],"as_of":"…"}
+```
+
+An account with no `metaapi_account_id` answers `linked:false` (a grey "not linked" badge, not a
+red error). Another trader's `account_id` is a `404`, identical to one that does not exist.
+
+Its policy lives in `supabase/functions/sync-account-data/shared.ts` and is unit-tested without a
+runtime:
+
+```bash
+node supabase/functions/sync-account-data/sync-account-data_test.ts
+# → sync-account-data: 12 tests passed
 ```
 
 ### Fire `sync-trades` once by hand

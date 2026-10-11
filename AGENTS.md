@@ -66,7 +66,7 @@ flutter build appbundle --release
 flutter build ipa --release        # via Codemagic
 dart run build_runner build --delete-conflicting-outputs
 supabase db push                    # after keys configured
-supabase functions deploy guard-check sync-trades ai-review ai-analyze-chart copy-signal market-bars
+supabase functions deploy guard-check sync-trades ai-review ai-analyze-chart copy-signal market-bars sync-account-data
 ```
 
 ## App runs in MOCK mode only when asked
