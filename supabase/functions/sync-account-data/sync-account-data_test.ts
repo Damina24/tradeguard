@@ -10,7 +10,14 @@
 // Run with:  node supabase/functions/sync-account-data/sync-account-data_test.ts
 // (Node 22+ strips the types natively. `deno test` works too.)
 
-import { mapConnection, normalisePositions, toPosition } from './shared.ts';
+import {
+  DAILY_SYNC_LIMIT,
+  DAILY_SYNC_LIMIT_MESSAGE,
+  mapConnection,
+  normalisePositions,
+  quotaExhausted,
+  toPosition,
+} from './shared.ts';
 
 let passed = 0;
 const failures: string[] = [];
@@ -151,6 +158,36 @@ test('a non-array / malformed body yields no positions, not a throw', () => {
   eq(normalisePositions(null).length, 0);
   eq(normalisePositions('nope').length, 0);
   eq(normalisePositions({}).length, 0);
+});
+
+// ---------------------------------------------------------------------------------------------
+// Daily rate limit — the credit-protection decision
+// ---------------------------------------------------------------------------------------------
+
+test('the daily limit is a sane positive cap', () => {
+  ok(Number.isInteger(DAILY_SYNC_LIMIT) && DAILY_SYNC_LIMIT > 0, 'positive int');
+});
+
+test('the limit message is the exact trader-facing wording', () => {
+  eq(DAILY_SYNC_LIMIT_MESSAGE, 'Daily sync limit reached. Please try again tomorrow.');
+});
+
+test('a consumed credit (count >= 1) is NOT exhausted', () => {
+  eq(quotaExhausted(1), false);
+  eq(quotaExhausted(2), false);
+  eq(quotaExhausted(DAILY_SYNC_LIMIT), false);
+});
+
+test('zero means the cap is reached — quota exhausted', () => {
+  eq(quotaExhausted(0), true);
+});
+
+test('a missing / non-numeric count fails safe to exhausted', () => {
+  // The RPC returns a number; anything else is a mis-shaped call and must NOT slip a credit
+  // through, so we treat it as exhausted (the handler fails closed before MetaAPI).
+  eq(quotaExhausted(null), true);
+  eq(quotaExhausted(undefined), true);
+  eq(quotaExhausted(Number.NaN), true);
 });
 
 // ---------------------------------------------------------------------------------------------

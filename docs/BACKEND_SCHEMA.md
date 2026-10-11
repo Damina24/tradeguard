@@ -298,6 +298,8 @@ GET  /functions/v1/guard-status?account_id= -> {daily_used_pct, daily_left, dd_d
 POST /functions/v1/sync-trades        {account_id} -> {imported, updated}
 POST /functions/v1/sync-account-data  {account_id} -> {balance, equity, connection,
                                                 linked, positions[], as_of}
+                                                 (429 DAILY_SYNC_LIMIT_MESSAGE past the
+                                                  per-user daily cap — migration 0011)
 POST /functions/v1/ai-review          {trade_id} -> {summary, leak, score, suggestions[]}
 POST /functions/v1/market-bars          {symbol, interval} -> {symbol, interval, bars[], as_of}
 POST /functions/v1/ai-analyze-chart   {image_url} -> {bias, levels[], entry, sl, tp[]}

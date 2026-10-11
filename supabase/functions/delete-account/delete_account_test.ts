@@ -3,7 +3,8 @@
 // `shared.ts` against a FAKE client that records every call, so the contract the store reviewers
 // care about is verified in CI:
 //   * auth required — a missing/malformed bearer resolves to no caller (the handler answers 401);
-//   * rows deleted — every user-owned table is deleted, scoped to the caller's uid, child-first;
+//   * rows deleted — every user-owned table (incl. api_rate_limits) is deleted, scoped to the
+//     caller's uid, child-first;
 //   * storage prefix deleted — objects under the uid are listed and removed;
 //   * idempotent second call — a second run finds nothing and still returns a success summary, and
 //     an already-deleted user from `deleteUser` is treated as success, not an error.
@@ -182,6 +183,7 @@ test('children are deleted before their parent (child-first order)', async () =>
   ok(order.indexOf('signal_follows') < order.indexOf('broker_accounts'));
   ok(order.indexOf('broker_accounts') < order.indexOf('profiles'));
   ok(order.indexOf('copy_settings') < order.indexOf('profiles'));
+  ok(order.indexOf('api_rate_limits') < order.indexOf('profiles'));
 });
 
 test('global tables are never touched', async () => {

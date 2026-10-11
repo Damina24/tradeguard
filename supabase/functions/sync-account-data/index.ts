@@ -27,12 +27,30 @@
 //                   not propagated: a MetaAPI error can echo the account id back, so
 //                   only the status code is logged.
 //
+// ── Daily rate limit ───────────────────────────────────────────────────────────
+// MetaAPI is metered and this endpoint is on demand, so we cap how often one user may
+// pull live data per UTC day. Immediately BEFORE any MetaAPI call — and only after the
+// ownership + link checks, so a 404 probe or an unlinked account spends neither a credit
+// nor quota — we call the atomic `consume_sync_quota` RPC (migration 0011). It returns the
+// new per-day count, or 0 when the user is already at the cap; 0 becomes a 429 with the
+// exact trader message. The counter lives in `api_rate_limits (user_id, date)` and resets
+// at UTC midnight because a new day is a new row. The RPC is a single guarded upsert, so
+// two concurrent refreshes cannot both slip past the limit. If the RPC itself errors we
+// fail CLOSED (503) rather than silently spending a credit we cannot account for.
+//
 // Not covered by `flutter test`: needs a live Supabase project + MetaAPI token. The
-// connection-mapping and position rules are unit-tested in `sync-account-data_test.ts`.
+// connection-mapping, position and rate-limit rules are unit-tested in
+// `sync-account-data_test.ts`.
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
-import { mapConnection, normalisePositions } from './shared.ts';
+import {
+  DAILY_SYNC_LIMIT,
+  DAILY_SYNC_LIMIT_MESSAGE,
+  mapConnection,
+  normalisePositions,
+  quotaExhausted,
+} from './shared.ts';
 import type { ConnectionState, Position } from './shared.ts';
 
 const METAAPI_BASE = 'https://api.metavantage.com';
@@ -216,6 +234,30 @@ Deno.serve(async (req: Request): Promise<Response> => {
       positions: [],
       as_of: new Date().toISOString(),
     });
+  }
+
+  // ── Daily rate limit ─────────────────────────────────────────────────────────
+  // The account is owned by the caller AND linked to a broker, so the next step WILL
+  // spend a metered MetaAPI credit. Consume one unit of the caller's daily quota first.
+  // This is a single atomic upsert keyed on (user_id, UTC day): it returns the new count
+  // when under the cap, or 0 when the user has already used today's allowance. A 0 (or any
+  // RPC error, so we fail CLOSED and never spend a credit we cannot account for) stops the
+  // request here — before MetaAPI is ever called.
+  const { data: quota, error: quotaError } = await sb.rpc('consume_sync_quota', {
+    p_user_id: userId,
+    p_limit: DAILY_SYNC_LIMIT,
+  });
+
+  if (quotaError) {
+    // Fail closed: without a reliable counter we cannot protect the allowance, so refuse
+    // rather than risk an unbilled MetaAPI call. Status only — a PostgREST error can echo
+    // the table/function name, none of which is worth persisting.
+    console.error('sync-account-data: rate-limit check failed');
+    return json({ ok: false, error: 'server' }, 500);
+  }
+
+  if (quotaExhausted(quota as number | null)) {
+    return json({ ok: false, error: DAILY_SYNC_LIMIT_MESSAGE }, 429);
   }
 
   const result = await fetchAccount(providerAccountId);

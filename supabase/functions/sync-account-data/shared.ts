@@ -124,3 +124,42 @@ export function normalisePositions(body: unknown): Position[] {
   }
   return out;
 }
+
+// ── Daily rate limit (MetaAPI credit protection) ──────────────────────────────
+//
+// MetaAPI is metered and `sync-account-data` is on demand, so a single user mashing refresh (or a
+// script replaying the endpoint with their own JWT) could exhaust the shared allowance. We cap the
+// number of live syncs one user may make per UTC day. The count lives in the `api_rate_limits`
+// table (migration 0011) and is advanced atomically by the `consume_sync_quota` RPC; this file
+// holds only the constants and the pure decision, so the cap and the trader-facing message are
+// unit-tested without a runtime or a Supabase project.
+
+/**
+ * Maximum live-data syncs a single user may make per UTC day.
+ *
+ * Chosen to leave generous headroom for a trader refreshing the Guard dashboard throughout the
+ * day while still capping a runaway loop or an automated replay. It is a product knob, not a
+ * security boundary on its own — the atomic RPC is what enforces it.
+ */
+export const DAILY_SYNC_LIMIT = 60;
+
+/**
+ * The exact trader-facing message returned when the daily cap is reached.
+ *
+ * Wording is fixed here (and mirrored on the client) so the wording never drifts. It names no
+ * internal detail — not the table, not the count, not "MetaAPI".
+ */
+export const DAILY_SYNC_LIMIT_MESSAGE =
+  'Daily sync limit reached. Please try again tomorrow.';
+
+/**
+ * Whether the result of `consume_sync_quota` means the user is out of quota.
+ *
+ * The RPC returns the new count (>= 1) when a credit was consumed, or 0 when the user is already
+ * at the cap for today. Anything non-positive (including a null/undefined from a mis-shaped call)
+ * is treated as "exhausted" so the caller fails safe and never spends a MetaAPI credit it has not
+ * paid for.
+ */
+export function quotaExhausted(count: number | null | undefined): boolean {
+  return !Number.isFinite(count as number) || (count as number) <= 0;
+}

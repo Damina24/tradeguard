@@ -133,8 +133,23 @@ runtime:
 
 ```bash
 node supabase/functions/sync-account-data/sync-account-data_test.ts
-# → sync-account-data: 12 tests passed
+# → sync-account-data: 17 tests passed
 ```
+
+### Daily rate limit on live syncs (`sync-account-data`)
+
+MetaAPI is metered and `sync-account-data` is on demand, so each user is capped at **60 live
+syncs per UTC day** (migration `0011_api_rate_limits.sql`). The counter lives in `api_rate_limits
+(user_id, date)` and is advanced atomically by the `consume_sync_quota` RPC immediately before the
+MetaAPI call — so a `404` probe of another trader's `account_id` or an unlinked account spends
+neither a credit nor quota. When the cap is reached the endpoint answers:
+
+```bash
+# → HTTP 429  {"ok":false,"error":"Daily sync limit reached. Please try again tomorrow."}
+```
+
+The counter resets at UTC midnight because a new day is a new row — no sweep, no expiry. The client
+must surface `DAILY_SYNC_LIMIT_MESSAGE` verbatim and never retry in a tight loop.
 
 ### Fire `sync-trades` once by hand
 

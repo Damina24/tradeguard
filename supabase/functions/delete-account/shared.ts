@@ -9,14 +9,14 @@
 //     -> { ok: true, deleted: {<table>: n, ...}, storage: n, user_deleted: true }
 //
 // ── Deletion target list ─────────────────────────────────────────────────────────────────────────
-// Enumerated by reading migrations 0001–0010 for EVERY table with a `user_id` column, then ordered
+// Enumerated by reading migrations 0001–0011 for EVERY table with a `user_id` column, then ordered
 // child-first so an explicit delete never races a parent's ON DELETE CASCADE. This is the single
 // source of truth for both the function and its test — do not special-case it elsewhere.
 //   * ai_reviews, signal_follows, trade_sync_cursors, trades  — reference another user table, so
 //     they are removed before that parent.
 //   * broker_accounts — its delete CASCADEs `equity_snapshots` (which has NO `user_id`; it is owned
 //     transitively through `broker_accounts.account_id`), so no separate statement is needed.
-//   * copy_settings — references `profiles` only.
+//   * copy_settings, api_rate_limits — reference `profiles` only.
 //   * profiles — keyed by `id` (the uid), not `user_id`; deleted last of the rows.
 // GLOBAL tables are deliberately NOT here: `signals` (shared operator ledger, keyed by `posted_by`)
 // and `prices_cache` (shared market OHLC, no `user_id`) hold nothing private to one trader.
@@ -43,6 +43,7 @@ export const TABLES: ReadonlyArray<{ table: string; column: string }> = [
   { table: 'trades', column: 'user_id' },
   { table: 'broker_accounts', column: 'user_id' }, // cascades equity_snapshots
   { table: 'copy_settings', column: 'user_id' },
+  { table: 'api_rate_limits', column: 'user_id' }, // daily-sync quota counter (migration 0011)
   { table: 'profiles', column: 'id' },
 ];
 
