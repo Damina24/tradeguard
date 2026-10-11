@@ -76,6 +76,13 @@ function json(payload: unknown, status = 200): Response {
   });
 }
 
+/** A random 32-hex-char id. MetaAPI requires a unique `transaction-id` per create request. */
+function newTransactionId(): string {
+  const bytes = new Uint8Array(16);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
+}
+
 Deno.serve(async (req: Request): Promise<Response> => {
   if (req.method === 'OPTIONS') return json({}, 204);
   if (req.method !== 'POST') return json({ ok: false, error: 'Method not allowed' }, 405);
@@ -105,19 +112,55 @@ Deno.serve(async (req: Request): Promise<Response> => {
 
   const { login, password, server, platform } = validated.body;
 
-  try {
-    const res = await fetch(`${METAAPI_BASE}/metaapi/accounts`, {
+  const transactionId = newTransactionId();
+  const createBody = JSON.stringify({
+    login,
+    // MetaAPI requires a human-readable name; the broker login is a safe, unique label.
+    name: `TradeGuard-${login}`,
+    password,
+    server,
+    platform,
+    type: 'cloud',
+  });
+
+  // MetaAPI may answer 202 Accepted while it starts the cloud API server. The docs say to
+  // re-send the identical request (same transaction-id) to poll for the eventual result.
+  const postAccount = () =>
+    fetch(`${METAAPI_BASE}/users/current/accounts`, {
       method: 'POST',
       headers: {
         'auth-token': token,
+        'transaction-id': transactionId,
         'Content-Type': 'application/json',
+        'Accept': 'application/json',
       },
-      body: JSON.stringify({ login, password, server, platform }),
+      body: createBody,
     });
 
+  try {
+    // Debug: log the exact payload sent to MetaAPI (password masked, never the real value).
+    // TEMPORARY — remove this once the 400 is diagnosed.
+    console.log('Sending to MetaAPI:', {
+      login,
+      server,
+      platform,
+      name: `TradeGuard-${login}`,
+      type: 'cloud',
+      password: '***',
+    });
+
+    let res = await postAccount();
+    for (let attempt = 0; res.status === 202 && attempt < 10; attempt += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 1500));
+      res = await postAccount();
+    }
+
     if (!res.ok) {
-      // Log the status only. The MetaAPI body can contain the login/password echo.
       console.error('meta-connect: MetaAPI rejected', res.status);
+      // Debug: surface the exact MetaAPI error body so we can see WHY it 400'd (e.g.
+      // E_SERVER_NOT_FOUND, a validation error, etc.). TEMPORARY — a MetaAPI error body can echo
+      // the login back, so revert this to status-only logging once the root cause is known.
+      console.error('MetaAPI Error Body:', await res.text());
       return json({ ok: false, error: 'The broker rejected those details.' }, 400);
     }
 
