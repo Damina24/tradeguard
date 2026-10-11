@@ -121,6 +121,9 @@ Deno.serve(async (req: Request): Promise<Response> => {
     server,
     platform,
     type: 'cloud',
+    // MetaAPI validates this endpoint and currently requires `magic` (the EA magic number that
+    // identifies orders opened by the app). A fixed default is fine — TradeGuard only reads.
+    magic: 123456,
   });
 
   // MetaAPI may answer 202 Accepted while it starts the cloud API server. The docs say to
@@ -138,17 +141,6 @@ Deno.serve(async (req: Request): Promise<Response> => {
     });
 
   try {
-    // Debug: log the exact payload sent to MetaAPI (password masked, never the real value).
-    // TEMPORARY — remove this once the 400 is diagnosed.
-    console.log('Sending to MetaAPI:', {
-      login,
-      server,
-      platform,
-      name: `TradeGuard-${login}`,
-      type: 'cloud',
-      password: '***',
-    });
-
     let res = await postAccount();
     for (let attempt = 0; res.status === 202 && attempt < 10; attempt += 1) {
       await new Promise((resolve) => setTimeout(resolve, 1500));
@@ -157,10 +149,10 @@ Deno.serve(async (req: Request): Promise<Response> => {
 
     if (!res.ok) {
       console.error('meta-connect: MetaAPI rejected', res.status);
-      // Debug: surface the exact MetaAPI error body so we can see WHY it 400'd (e.g.
-      // E_SERVER_NOT_FOUND, a validation error, etc.). TEMPORARY — a MetaAPI error body can echo
-      // the login back, so revert this to status-only logging once the root cause is known.
-      console.error('MetaAPI Error Body:', await res.text());
+      const bodyText = await res.text();
+      // Server-side only: the MetaAPI error body can echo the login back, so it is logged here for
+      // debugging but NEVER returned to the caller (see the generic response below).
+      console.error('MetaAPI Error Body:', bodyText);
       return json({ ok: false, error: 'The broker rejected those details.' }, 400);
     }
 
