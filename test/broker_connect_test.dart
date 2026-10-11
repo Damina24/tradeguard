@@ -3,15 +3,15 @@ import 'package:tradeguard/core/models/account.dart';
 import 'package:tradeguard/core/services/broker_connect_service.dart';
 
 BrokerConnectionRequest _request({
-  String login = '5012345',
-  String password = 'sup3rSecret',
-  String server = 'FTMO-Demo',
+  String login = '123456',
+  String password = 'test-secret',
+  String server = 'Generic',
   String platform = 'mt5',
-  String nickname = 'FTMO EVAL 100K',
-  double initialBalance = 100000,
-  double profitTarget = 8000,
-  double dailyLossLimit = 5000,
-  double maxDrawdown = 10000,
+  String nickname = 'Test Account',
+  double initialBalance = 10000,
+  double profitTarget = 100,
+  double dailyLossLimit = 50,
+  double maxDrawdown = 100,
 }) =>
     BrokerConnectionRequest(
       login: login,
@@ -26,7 +26,7 @@ BrokerConnectionRequest _request({
       dailyLossLimit: dailyLossLimit,
       maxDrawdown: maxDrawdown,
       drawdownType: DrawdownType.trailing,
-      propFirm: 'FTMO',
+      propFirm: null,
     );
 
 void main() {
@@ -93,14 +93,17 @@ void main() {
         now: DateTime.fromMillisecondsSinceEpoch(1700000000000),
       );
 
-      expect(account.id, 'acc_1700000000000');
+      // `id` is `''` so the repository drops the column and Postgres mints a
+      // uuid (`broker_accounts.id` is `uuid default gen_random_uuid()`).
+      // The MetaAPI id and prop rules are carried as expected.
+      expect(account.id, '');
       expect(account.metaapiAccountId, 'meta-123');
-      expect(account.nickname, 'FTMO EVAL 100K');
+      expect(account.nickname, 'Test Account');
       expect(account.phase, AccountPhase.eval);
       expect(account.drawdownType, DrawdownType.trailing);
-      expect(account.propFirm, 'FTMO');
-      expect(account.dailyLossLimit, 5000);
-      expect(account.maxDrawdown, 10000);
+      expect(account.propFirm, null);
+      expect(account.dailyLossLimit, 50);
+      expect(account.maxDrawdown, 100);
       expect(account.equityGuardEnabled, isTrue);
     });
 
@@ -125,7 +128,7 @@ void main() {
 
       final first = await service.connectBroker(_request());
       final second = await service.connectBroker(_request());
-      expect(first, 'mock_meta_5012345');
+      expect(first, 'mock_meta_123456');
       expect(second, first);
     });
 
@@ -135,8 +138,8 @@ void main() {
 
       expect(service.receivedBodies, hasLength(1));
       expect(service.receivedBodies.single, isNot(contains('password')));
-      expect(service.receivedBodies.single['login'], '5012345');
-      expect(service.receivedBodies.single['server'], 'FTMO-Demo');
+      expect(service.receivedBodies.single['login'], '123456');
+      expect(service.receivedBodies.single['server'], 'Generic');
       expect(service.receivedBodies.single['platform'], 'mt5');
     });
 

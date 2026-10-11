@@ -39,10 +39,10 @@ class _ConnectBrokerSheetState extends ConsumerState<ConnectBrokerSheet> {
   final TextEditingController _password = TextEditingController();
   final TextEditingController _server = TextEditingController();
   final TextEditingController _propFirm = TextEditingController();
-  final TextEditingController _initialBalance = TextEditingController(text: '100000');
-  final TextEditingController _profitTarget = TextEditingController(text: '8000');
-  final TextEditingController _dailyLoss = TextEditingController(text: '5000');
-  final TextEditingController _maxDrawdown = TextEditingController(text: '10000');
+  final TextEditingController _initialBalance = TextEditingController();
+  final TextEditingController _profitTarget = TextEditingController();
+  final TextEditingController _dailyLoss = TextEditingController();
+  final TextEditingController _maxDrawdown = TextEditingController();
 
   String _platform = BrokerConnectionRequest.platforms.first;
   AccountPhase _phase = AccountPhase.eval;
