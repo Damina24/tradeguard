@@ -113,8 +113,7 @@ class FatalConfigScreen extends StatelessWidget {
                       'flutter build appbundle --release \\\n'
                       '  --dart-define=SUPABASE_URL=https://<project>.supabase.co \\\n'
                       '  --dart-define=SUPABASE_ANON_KEY=<anon key>\n\n'
-                      'See docs/BACKEND_DEPLOY.md for the full command, including '
-                      'the RevenueCat store keys.',
+                      'See docs/BACKEND_DEPLOY.md for the full command.',
                       style: AppTextStyles.disclaimer,
                     ),
                   ),

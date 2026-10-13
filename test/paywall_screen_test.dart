@@ -3,62 +3,60 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:purchases_flutter/purchases_flutter.dart';
 import 'package:tradeguard/core/services/providers.dart';
 import 'package:tradeguard/core/theme/app_theme.dart';
 import 'package:tradeguard/features/paywall/data/purchase_repository.dart';
 import 'package:tradeguard/features/paywall/presentation/paywall_screen.dart';
+// `url_launcher_platform_interface` is a transitive dependency of `url_launcher`
+// (already resolved in the lockfile). It is imported here — not added as a new
+// dependency — purely to install a fake UrlLauncherPlatform so the Subscribe
+// button's `launchUrl` is recorded instead of opening a real browser. The lint
+// that wants it declared directly is intentionally suppressed (same pattern as
+// `legal_links_test.dart`).
+// ignore: depend_on_referenced_packages
+import 'package:url_launcher_platform_interface/link.dart';
+// ignore: depend_on_referenced_packages
+import 'package:url_launcher_platform_interface/url_launcher_platform_interface.dart';
 
 /// A purchase repository driven entirely by its constructor, so every paywall
-/// state (offers, Pro, loading, purchase failure) is reachable without a store.
+/// state (offers, Pro, loading) is reachable without a backend. Premium is now
+/// a single boolean, so this only controls [isPro] and whether the read is
+/// still pending.
 class _FakePurchaseRepository implements PurchaseRepository {
   _FakePurchaseRepository({
     this.pro = false,
-    this.packages = const <Object>[],
     this.pending = false,
-    this.loadError,
-    this.purchaseError,
   });
 
   final bool pro;
-  final List<Object> packages;
 
-  /// When true, `loadPackages` never completes, so the loading state can be seen.
+  /// When true, `isPro` never completes, so the loading state can be seen.
   final bool pending;
-  final Object? loadError;
-  final Object? purchaseError;
 
   @override
-  Future<bool> isPro() async => pro;
+  Future<bool> isPro() async {
+    if (pending) return Completer<bool>().future;
+    return pro;
+  }
 
   @override
   Stream<bool> watchProStatus() => Stream<bool>.value(pro);
-
-  @override
-  Future<List<Object>> loadPackages() async {
-    if (pending) return Completer<List<Object>>().future;
-    final Object? e = loadError;
-    if (e != null) throw e;
-    return packages;
-  }
-
-  @override
-  Future<void> purchase(Object package) async {
-    final Object? e = purchaseError;
-    if (e != null) throw e;
-  }
-
-  @override
-  Future<void> restore() async {}
 }
 
-/// A store package with a human label and the store's own localized price.
-Package _pkg(PackageType type, String title, String price) => Package(
-      'id_${type.name}',
-      type,
-      StoreProduct('prod_${type.name}', 'desc', title, 9.99, price, 'USD'),
-      const PresentedOfferingContext('default', null, null),
-    );
+/// Records every URL handed to `launchUrl` so a test can assert the exact
+/// Paystack Payment Page link without a real browser.
+class _RecordingLauncher extends UrlLauncherPlatform {
+  final List<String> launchedUrls = <String>[];
+
+  @override
+  Future<bool> launchUrl(String url, LaunchOptions options) async {
+    launchedUrls.add(url);
+    return true;
+  }
+
+  @override
+  LinkDelegate? get linkDelegate => null;
+}
 
 Widget _app(PurchaseRepository repo) => ProviderScope(
       overrides: <Override>[
@@ -76,130 +74,81 @@ void _usePhoneSurface(WidgetTester tester) {
 }
 
 void main() {
-  testWidgets('shows a loading indicator while offerings load',
+  late _RecordingLauncher launcher;
+  late UrlLauncherPlatform original;
+
+  setUp(() {
+    original = UrlLauncherPlatform.instance;
+    launcher = _RecordingLauncher();
+    UrlLauncherPlatform.instance = launcher;
+  });
+
+  tearDown(() {
+    UrlLauncherPlatform.instance = original;
+  });
+
+  testWidgets('shows a loading indicator while the premium flag is read',
       (WidgetTester tester) async {
     _usePhoneSurface(tester);
     await tester.pumpWidget(_app(_FakePurchaseRepository(pending: true)));
-    // A single pump: the pending loadPackages never completes, and a spinner
-    // animates forever, so pumpAndSettle could never return.
+    // A single pump: the pending isPro never completes, and a spinner animates
+    // forever, so pumpAndSettle could never return.
     await tester.pump();
 
     expect(find.byType(CircularProgressIndicator), findsOneWidget);
   });
 
-  testWidgets('renders store packages with title, price and Subscribe',
+  testWidgets('renders the Subscribe + Check Status actions and the disclaimer',
       (WidgetTester tester) async {
     _usePhoneSurface(tester);
-    await tester.pumpWidget(
-      _app(
-        _FakePurchaseRepository(
-          packages: <Object>[
-            _pkg(PackageType.monthly, 'TradeGuard Pro Monthly', r'$9.99'),
-            _pkg(PackageType.annual, 'TradeGuard Pro Annual', r'$99.99'),
-          ],
-        ),
-      ),
-    );
+    await tester.pumpWidget(_app(_FakePurchaseRepository()));
     await tester.pumpAndSettle();
 
-    // The plan label comes from the package type; the store title and price
-    // come from the store product itself.
-    expect(find.text('Monthly'), findsOneWidget);
-    expect(find.text('Annual'), findsOneWidget);
-    expect(find.text('TradeGuard Pro Monthly'), findsOneWidget);
-    expect(find.text('TradeGuard Pro Annual'), findsOneWidget);
-    expect(find.text(r'$9.99'), findsOneWidget);
-    expect(find.text(r'$99.99'), findsOneWidget);
-    // One Subscribe button per package.
-    expect(find.widgetWithText(ElevatedButton, 'Subscribe'), findsNWidgets(2));
+    expect(find.text('Subscribe for ₦14,999/month'), findsOneWidget);
+    expect(find.text('I Have Subscribed / Check Status'), findsOneWidget);
     // The paywall is a compliance surface, so the disclaimer is always shown.
     expect(find.textContaining('high-risk'), findsOneWidget);
   });
 
-  testWidgets('Subscribe routes the chosen package to the notifier',
+  testWidgets('Subscribe opens the Paystack Payment Page in the browser',
       (WidgetTester tester) async {
     _usePhoneSurface(tester);
-    final _FakePurchaseRepository repo = _FakePurchaseRepository(
-      packages: <Object>[
-        _pkg(PackageType.monthly, 'TradeGuard Pro Monthly', r'$9.99'),
-      ],
-    );
-    await tester.pumpWidget(_app(repo));
+    await tester.pumpWidget(_app(_FakePurchaseRepository()));
     await tester.pumpAndSettle();
 
-    // Tapping Subscribe calls purchase(package) on the repository; with no
-    // error the notifier re-syncs and the offers remain (mock stays not-Pro).
-    await tester.tap(find.widgetWithText(ElevatedButton, 'Subscribe'));
+    await tester.tap(find.text('Subscribe for ₦14,999/month'));
     await tester.pumpAndSettle();
 
-    expect(find.text('Monthly'), findsOneWidget);
+    // The exact Paystack Payment Page link is launched externally.
+    expect(launcher.launchedUrls, contains('https://paystack.com/pay/YOUR_PAYMENT_PAGE_LINK_HERE'));
     expect(tester.takeException(), isNull);
   });
 
   testWidgets('a Pro member sees a confirmation, not a purchase UI',
       (WidgetTester tester) async {
     _usePhoneSurface(tester);
-    await tester.pumpWidget(
-      _app(
-        _FakePurchaseRepository(
-          pro: true,
-          packages: <Object>[_pkg(PackageType.monthly, 'Monthly', r'$9.99')],
-        ),
-      ),
-    );
+    await tester.pumpWidget(_app(_FakePurchaseRepository(pro: true)));
     await tester.pumpAndSettle();
 
     expect(find.text('You are a Pro member'), findsOneWidget);
     expect(find.byIcon(Icons.check_circle), findsOneWidget);
     // No purchase surface for someone who already owns it.
-    expect(find.widgetWithText(ElevatedButton, 'Subscribe'), findsNothing);
-    expect(find.text('Restore Purchases'), findsNothing);
+    expect(find.text('Subscribe for ₦14,999/month'), findsNothing);
+    expect(find.text('I Have Subscribed / Check Status'), findsNothing);
   });
 
-  testWidgets('shows an empty-state message when no offerings are returned',
+  testWidgets('Check Status on a not-yet-premium trader reports it did not find it',
       (WidgetTester tester) async {
     _usePhoneSurface(tester);
-    await tester.pumpWidget(_app(_FakePurchaseRepository()));
+    await tester.pumpWidget(_app(_FakePurchaseRepository(pro: false)));
     await tester.pumpAndSettle();
 
-    expect(find.textContaining('No subscription options'), findsOneWidget);
-    expect(find.widgetWithText(ElevatedButton, 'Subscribe'), findsNothing);
-    expect(find.text('Restore Purchases'), findsOneWidget);
-  });
-
-  testWidgets('surfaces a purchase failure as a trader-safe SnackBar',
-      (WidgetTester tester) async {
-    _usePhoneSurface(tester);
-    await tester.pumpWidget(
-      _app(
-        _FakePurchaseRepository(
-          packages: <Object>[_pkg(PackageType.monthly, 'Monthly', r'$9.99')],
-          purchaseError: const PurchaseFailure('Could not reach the store.'),
-        ),
-      ),
-    );
+    await tester.tap(find.text('I Have Subscribed / Check Status'));
     await tester.pumpAndSettle();
 
-    await tester.tap(find.widgetWithText(ElevatedButton, 'Subscribe'));
-    await tester.pumpAndSettle();
-
-    // The repository's trader-safe message is shown; no raw SDK text leaks.
-    expect(find.text('Could not reach the store.'), findsOneWidget);
-  });
-
-  testWidgets('surfaces a load failure as a trader-safe SnackBar',
-      (WidgetTester tester) async {
-    _usePhoneSurface(tester);
-    await tester.pumpWidget(
-      _app(
-        _FakePurchaseRepository(
-          loadError: const PurchaseFailure('Store is unreachable.'),
-        ),
-      ),
-    );
-    await tester.pumpAndSettle();
-
-    // A failure to load offerings is reported as a SnackBar.
-    expect(find.text('Store is unreachable.'), findsOneWidget);
+    // Not premium yet: the trader is told the payment has not been seen, and
+    // the paywall stays open.
+    expect(find.textContaining('could not find your subscription'), findsOneWidget);
+    expect(tester.takeException(), isNull);
   });
 }

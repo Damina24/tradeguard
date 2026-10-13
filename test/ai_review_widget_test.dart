@@ -682,8 +682,9 @@ void main() {
   });
 }
 
-/// A purchase repository pinned to a fixed Pro status and no offerings, so the
-/// AI review Pro gate can be driven both ways.
+/// A purchase repository pinned to a fixed Pro status, so the AI review Pro
+/// gate can be driven both ways. Premium is now a boolean read from Supabase,
+/// so this fake only needs [isPro] and [watchProStatus].
 class _FixedPurchaseRepository implements PurchaseRepository {
   _FixedPurchaseRepository(this._pro);
 
@@ -694,13 +695,4 @@ class _FixedPurchaseRepository implements PurchaseRepository {
 
   @override
   Stream<bool> watchProStatus() => Stream<bool>.value(_pro);
-
-  @override
-  Future<List<Object>> loadPackages() async => const <Object>[];
-
-  @override
-  Future<void> purchase(Object package) async {}
-
-  @override
-  Future<void> restore() async {}
 }

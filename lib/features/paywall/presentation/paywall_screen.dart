@@ -1,29 +1,29 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:purchases_flutter/purchases_flutter.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../../core/constants/app_strings.dart';
 import '../../../core/services/providers.dart';
 import '../../../core/services/telemetry_service.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_text_styles.dart';
-import '../data/purchase_repository.dart';
 
-/// TradeGuard Pro paywall (task 4.1b).
+/// TradeGuard Pro paywall — Paystack Payment Page flow.
 ///
-/// Reads [purchasesProvider] and renders exactly one of three states:
+/// The simplest possible flow: no store SDK, no subscription table, just a
+/// boolean. The trader taps **Subscribe** and the Paystack Payment Page opens
+/// in the device browser. Paystack charges the card and calls the
+/// `paystack-webhook` Edge Function, which flips `profiles.is_premium` to true.
+/// The trader returns, taps **I Have Subscribed / Check Status**, and this
+/// screen re-reads that flag: on success it shows a confirmation, closes the
+/// paywall and the rest of the app unlocks (every Pro gate reads
+/// [purchasesProvider].isPro).
 ///
-///   * **loading** — a spinner while the store offerings are fetched;
+/// Three states, read from [purchasesProvider]:
+///   * **loading** — a spinner while the flag is (re)read;
 ///   * **Pro**     — a confirmation with a checkmark and no purchase UI;
-///   * **offers**  — the store packages (Monthly / Annual / …) with a Subscribe
-///                   button each, a Restore Purchases action, and the verbatim
-///                   risk disclaimer (a paywall is a compliance surface).
-///
-/// Every price comes from the store object itself (its localized `priceString`),
-/// so the screen never invents a number. Purchases and restores are routed
-/// through the notifier, which delegates to `Services.instance.purchases` and
-/// records any failure on [PurchaseState.error]; this screen listens for that
-/// error and surfaces it as a trader-safe SnackBar.
+///   * **offers**  — the Subscribe + Check Status actions and the verbatim risk
+///                   disclaimer (a paywall is a compliance surface).
 ///
 /// The Equity Guard, Kill Switch and STOP button are deliberately NOT part of
 /// this paywall — they are safety features and stay free for every trader.
@@ -35,11 +35,15 @@ class PaywallScreen extends ConsumerStatefulWidget {
 }
 
 class _PaywallScreenState extends ConsumerState<PaywallScreen> {
+  /// True while a "Check Status" tap is re-reading the flag, so the button can
+  /// show its own busy state separate from the initial load.
+  bool _checking = false;
+
   @override
   void initState() {
     super.initState();
-    // Coarse, non-PII: the paywall was opened. No user id, chosen plan or
-    // price is attached — only the fact that the surface was viewed.
+    // Coarse, non-PII: the paywall was opened. No user id, plan or price is
+    // attached — only the fact that the surface was viewed.
     TelemetryService.instance.logEvent('paywall_viewed');
   }
 
@@ -52,7 +56,9 @@ class _PaywallScreenState extends ConsumerState<PaywallScreen> {
         if (error != null && !identical(error, previous?.error)) {
           ScaffoldMessenger.of(context)
             ..hideCurrentSnackBar()
-            ..showSnackBar(SnackBar(content: Text(_safeError(error))));
+            ..showSnackBar(
+              const SnackBar(content: Text(_Strings.genericError)),
+            );
         }
       },
     );
@@ -66,44 +72,111 @@ class _PaywallScreenState extends ConsumerState<PaywallScreen> {
             ? const Center(child: CircularProgressIndicator())
             : state.isPro
                 ? const _ProMember()
-                : _Offers(state: state),
+                : _Offers(
+                    checking: _checking,
+                    onSubscribe: _subscribe,
+                    onCheckStatus: _checkStatus,
+                  ),
       ),
     );
   }
+
+  /// Opens the Paystack Payment Page in the device's external browser. A failure
+  /// to launch (no browser, or the launcher threw) is reported rather than
+  /// swallowed, so the tap never silently does nothing. The URL is a public
+  /// payment link, not a secret; nothing sensitive is logged.
+  Future<void> _subscribe() async {
+    final Uri uri = Uri.parse(_Strings.paystackUrl);
+    try {
+      final bool launched =
+          await launchUrl(uri, mode: LaunchMode.externalApplication);
+      if (!launched && mounted) {
+        _snack(_Strings.openFailed);
+      }
+    } catch (_) {
+      if (mounted) _snack(_Strings.openFailed);
+    }
+  }
+
+  /// Re-reads `profiles.is_premium`. On success it shows a confirmation and
+  /// pops the paywall so the app is already unlocked underneath; otherwise it
+  /// tells the trader the payment has not been seen yet. Never a raw error.
+  Future<void> _checkStatus() async {
+    setState(() => _checking = true);
+    try {
+      await ref.read(purchasesProvider.notifier).refresh();
+    } finally {
+      if (mounted) setState(() => _checking = false);
+    }
+    if (!mounted) return;
+
+    final bool isPro = ref.read(purchasesProvider).isPro;
+    if (isPro) {
+      _snack(_Strings.activated);
+      // Close the paywall: presented as a pushed route (Settings) or a modal
+      // sheet (Signals / AI Review / Copy). `maybeOf` + `canPop` covers both
+      // and is a no-op when there is nothing to pop.
+      final NavigatorState? nav = Navigator.maybeOf(context);
+      if (nav != null && nav.canPop()) nav.pop();
+    } else {
+      _snack(_Strings.notYet);
+    }
+  }
+
+  void _snack(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(message)));
+  }
 }
 
-/// Maps any thrown object onto a short, trader-safe sentence. A raw SDK or
-/// platform error never reaches the screen.
-String _safeError(Object error) =>
-    error is PurchaseFailure ? error.message : _Strings.genericError;
+/// The offers list: hero, the two actions, and the verbatim risk disclaimer.
+class _Offers extends StatelessWidget {
+  const _Offers({
+    required this.checking,
+    required this.onSubscribe,
+    required this.onCheckStatus,
+  });
 
-/// The offers list. A [ConsumerWidget] so each Subscribe / Restore control can
-/// reach the notifier without threading `ref` through every widget.
-class _Offers extends ConsumerWidget {
-  const _Offers({required this.state});
-
-  final PurchaseState state;
+  final bool checking;
+  final VoidCallback onSubscribe;
+  final VoidCallback onCheckStatus;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
       children: <Widget>[
         _hero(),
         const SizedBox(height: 20),
-        if (state.packages.isEmpty)
-          const Text(_Strings.noOffers, style: AppTextStyles.muted)
-        else
-          for (final Object raw in state.packages)
-            _packageCard(context, ref, raw),
+        // The primary action: open the Paystack Payment Page in the browser.
+        SizedBox(
+          width: double.infinity,
+          child: ElevatedButton(
+            onPressed: onSubscribe,
+            child: const Text(_Strings.subscribe),
+          ),
+        ),
         const SizedBox(height: 12),
-        Center(
-          child: TextButton(
-            onPressed: () => ref.read(purchasesProvider.notifier).restore(),
-            child: const Text(_Strings.restore),
+        // After paying, the trader comes back and taps this to re-read the
+        // flag the webhook set.
+        SizedBox(
+          width: double.infinity,
+          child: OutlinedButton(
+            onPressed: checking ? null : onCheckStatus,
+            child: checking
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Text(_Strings.checkStatus),
           ),
         ),
         const SizedBox(height: 20),
+        // Compliance: a paywall is a risk surface, so the disclaimer is always
+        // shown (AGENTS.md).
         Container(
           padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(
@@ -133,61 +206,11 @@ class _Offers extends ConsumerWidget {
             Text(_Strings.heroTitle, style: AppTextStyles.h2),
             SizedBox(height: 6),
             Text(_Strings.heroBody, style: AppTextStyles.muted),
+            SizedBox(height: 12),
+            Text(_Strings.price, style: AppTextStyles.metric),
           ],
         ),
       );
-
-  Widget _packageCard(BuildContext context, WidgetRef ref, Object raw) {
-    final (String label, String price, String product) = _packageInfo(raw);
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppColors.divider),
-      ),
-      // A Column, not a Row: the themed ElevatedButton carries an infinite
-      // minimum width (Size.fromHeight), which is legal as a full-width child
-      // here but illegal inside a horizontal Row.
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: <Widget>[
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: <Widget>[
-                    Text(label, style: AppTextStyles.title),
-                    if (product.isNotEmpty) ...<Widget>[
-                      const SizedBox(height: 2),
-                      Text(product, style: AppTextStyles.muted),
-                    ],
-                  ],
-                ),
-              ),
-              const SizedBox(width: 12),
-              Text(price, style: AppTextStyles.metric),
-            ],
-          ),
-          const SizedBox(height: 12),
-          SizedBox(
-            width: double.infinity,
-            child: ElevatedButton(
-              // Routed through the notifier so a failure lands in state.error
-              // and is surfaced as a SnackBar; the notifier delegates to
-              // Services.instance.purchases.purchase(package).
-              onPressed: () =>
-                  ref.read(purchasesProvider.notifier).purchase(raw),
-              child: const Text(_Strings.subscribe),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
 }
 
 /// The Pro confirmation. No purchase UI — a member has nothing to buy.
@@ -222,31 +245,6 @@ class _ProMember extends StatelessWidget {
   }
 }
 
-/// Reads a store package into display fields. `priceString` is the store's own
-/// localized price, so the screen never formats currency itself.
-(String, String, String) _packageInfo(Object raw) {
-  if (raw is Package) {
-    return (
-      _planLabel(raw.packageType),
-      raw.storeProduct.priceString,
-      raw.storeProduct.title,
-    );
-  }
-  return (_Strings.planFallback, '', '');
-}
-
-/// A human label for a store package type.
-String _planLabel(PackageType type) => switch (type) {
-      PackageType.monthly => 'Monthly',
-      PackageType.annual => 'Annual',
-      PackageType.weekly => 'Weekly',
-      PackageType.twoMonth => '2 months',
-      PackageType.threeMonth => '3 months',
-      PackageType.sixMonth => '6 months',
-      PackageType.lifetime => 'Lifetime',
-      PackageType.custom || PackageType.unknown => _Strings.planFallback,
-    };
-
 /// Paywall copy, kept out of the widget tree so no long string is inlined.
 class _Strings {
   _Strings._();
@@ -256,13 +254,22 @@ class _Strings {
   static const String heroBody =
       'AI chart analysis, AI trade reviews and copy-trading. The Equity Guard, '
       'Kill Switch and STOP button stay free for every trader.';
-  static const String noOffers =
-      'No subscription options are available right now. Please try again later.';
-  static const String subscribe = 'Subscribe';
-  static const String restore = 'Restore Purchases';
+  static const String price = '₦14,999 / month';
+  static const String subscribe = 'Subscribe for ₦14,999/month';
+  static const String checkStatus = 'I Have Subscribed / Check Status';
+  static const String activated = 'Subscription active — welcome to Pro!';
+  static const String notYet =
+      'We could not find your subscription yet. If you have just paid, wait a '
+      'moment and tap Check Status again.';
+  static const String openFailed = 'Could not open the payment page.';
   static const String genericError = 'Something went wrong. Please try again.';
-  static const String planFallback = 'Plan';
   static const String proMemberTitle = 'You are a Pro member';
   static const String proMemberBody =
       'Every premium tool is unlocked. Thanks for supporting TradeGuard.';
+
+  /// The Paystack Payment Page link. Replace the placeholder with the real
+  /// payment page URL (Paystack Dashboard → Payment Pages) before release.
+  static const String paystackUrl =
+      'https://paystack.com/pay/YOUR_PAYMENT_PAGE_LINK_HERE';
 }
+

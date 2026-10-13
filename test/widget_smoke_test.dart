@@ -200,22 +200,24 @@ void main() {
       expect(find.textContaining('Read-only'), findsOneWidget);
     });
 
-  testWidgets('Paywall renders the Pro offers surface', (WidgetTester tester) async {
+  testWidgets('Paywall renders the Subscribe + Check Status surface',
+      (WidgetTester tester) async {
     await tester.pumpWidget(_wrap(const PaywallScreen()));
     await tester.pumpAndSettle();
 
-    // Mock mode is not Pro and the store returns no offerings, so the offers
-    // surface shows its empty-state copy, a Restore Purchases action and the
-    // verbatim risk disclaimer — never a purchase button with an invented price.
+    // Mock mode is not Pro, so the paywall shows the Subscribe action (which
+    // opens the Paystack Payment Page), a Check Status action and the verbatim
+    // risk disclaimer — never a fabricated store offering.
     expect(find.text('TradeGuard Pro'), findsOneWidget);
-    expect(find.text('Restore Purchases'), findsOneWidget);
-    expect(find.textContaining('No subscription options'), findsOneWidget);
+    expect(find.text('Subscribe for ₦14,999/month'), findsOneWidget);
+    expect(find.text('I Have Subscribed / Check Status'), findsOneWidget);
     expect(find.textContaining('high-risk'), findsOneWidget);
   });
 }
 
-/// A purchase repository pinned to a fixed Pro status and no offerings, so the
-/// Signals AI Chart Analysis gate can be driven to the paywall.
+/// A purchase repository pinned to a fixed Pro status, so the Signals AI Chart
+/// Analysis gate can be driven to the paywall. Premium is now a boolean read
+/// from Supabase, so this fake only needs [isPro] and [watchProStatus].
 class _FixedProRepository implements PurchaseRepository {
   _FixedProRepository(this._pro);
 
@@ -226,13 +228,4 @@ class _FixedProRepository implements PurchaseRepository {
 
   @override
   Stream<bool> watchProStatus() => Stream<bool>.value(_pro);
-
-  @override
-  Future<List<Object>> loadPackages() async => const <Object>[];
-
-  @override
-  Future<void> purchase(Object package) async {}
-
-  @override
-  Future<void> restore() async {}
 }

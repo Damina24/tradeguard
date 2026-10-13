@@ -27,7 +27,6 @@ dependencies:
   webview_flutter: ^4.8.0
   firebase_core: ^3.3.0
   firebase_messaging: ^15.0.4
-  purchases_flutter: ^8.1.2
   logger: ^2.4.0
   # SHA-256 of the Apple sign-in nonce (see SocialAuthService).
   crypto: ^3.0.6

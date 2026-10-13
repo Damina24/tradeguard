@@ -139,12 +139,12 @@ class Services {
       ? MockCopySettingsRepository()
       : SupabaseCopySettingsRepository();
 
-  /// Live vs. mock store purchase repository. Not configured when no store keys
-  /// are present, so an unconfigured build (or mock mode) never needs a store
-  /// key and never touches the store SDK.
+  /// Live vs. mock premium-status repository. Reads `profiles.is_premium` from
+  /// Supabase in live mode; mock mode answers from memory, so the paywall and
+  /// every Pro gate run fully offline until a backend is configured.
   late final PurchaseRepository purchases = isMock
       ? MockPurchaseRepository()
-      : RevenueCatPurchaseRepository();
+      : SupabasePurchaseRepository();
 
 
   /// Registers a broker account with MetaAPI. Mock mode fabricates the id so the connect flow is

@@ -52,8 +52,15 @@ class SettingsScreen extends ConsumerWidget {
           const SizedBox(height: 20),
           const Text('SUBSCRIPTION', style: AppTextStyles.label),
           const SizedBox(height: 8),
-          SettingsTiles.tile(Icons.restore, 'Restore purchases',
-              () => SettingsTiles.snack(context, 'No purchases found.'),),
+          Consumer(
+            builder: (BuildContext context, WidgetRef ref, _) {
+              return SettingsTiles.tile(
+                Icons.refresh,
+                'Check subscription status',
+                () => _checkStatus(context, ref),
+              );
+            },
+          ),
           SettingsTiles.tile(
             Icons.card_giftcard,
             'Broker Offers & Cashback',
@@ -139,6 +146,32 @@ class SettingsScreen extends ConsumerWidget {
       ..showSnackBar(
         const SnackBar(content: Text('Broker connected. Guard will refresh shortly.')),
       );
+  }
+
+  /// Re-reads the trader's premium flag (`profiles.is_premium`) and reports the
+  /// result. A Paystack payment is confirmed out-of-band by the
+  /// `paystack-webhook` Edge Function, so "checking status" is just a fresh
+  /// read of that boolean. Outcomes are neutral, trader-safe copy; never a raw
+  /// error string.
+  Future<void> _checkStatus(BuildContext context, WidgetRef ref) async {
+    final purchases = ref.read(purchasesProvider.notifier);
+    if (!context.mounted) return;
+    try {
+      await purchases.refresh();
+      final bool isPro = ref.read(purchasesProvider).isPro;
+      if (context.mounted) {
+        SettingsTiles.snack(
+          context,
+          isPro ? 'Subscription active — Pro unlocked.' : 'No active subscription found.',
+        );
+      }
+    } catch (e) {
+      // `PurchaseFailure` (or any other throw) is already trader-safe; the
+      // repository owns the exact wording so the backend never leaks.
+      if (context.mounted) {
+        SettingsTiles.snack(context, 'Could not check your subscription. Try again.');
+      }
+    }
   }
 }
 

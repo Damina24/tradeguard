@@ -206,75 +206,59 @@ copySettingsProvider =
 final Provider<DeleteAccountRepository> deleteAccountRepositoryProvider =
     Provider<DeleteAccountRepository>((Ref ref) => Services.instance.deleteAccount);
 
-// ---- Purchases (RevenueCat) ----
+// ---- Purchases (Paystack premium toggle) ----
 
 /// UI state exposed by [PurchaseNotifier].
 ///
-/// [packages] holds the store offerings (as `Object` so this layer never
-/// imports the RevenueCat SDK types); [isLoading] is true while offerings or
-/// the pro status are being fetched; [error] carries the last failure, mapped
-/// to a trader-safe [PurchaseFailure] by the repository.
+/// [isPro] mirrors `profiles.is_premium`; [isLoading] is true while the flag is
+/// being (re)read; [error] carries the last failure, mapped to a trader-safe
+/// [PurchaseFailure] by the repository.
 class PurchaseState {
   final bool isPro;
   final bool isLoading;
-  final List<Object> packages;
   final Object? error;
   const PurchaseState({
     required this.isPro,
     this.isLoading = false,
-    this.packages = const <Object>[],
     this.error,
   });
 
   PurchaseState copyWith({
     bool? isPro,
     bool? isLoading,
-    List<Object>? packages,
     Object? error,
   }) =>
       PurchaseState(
         isPro: isPro ?? this.isPro,
         isLoading: isLoading ?? this.isLoading,
-        packages: packages ?? this.packages,
         error: error ?? this.error,
       );
 }
 
-/// Thin Riverpod notifier over [PurchaseRepository]. State is the pro status,
-/// the store offerings and any load error; the underlying repository owns the
-/// store SDK. [loadPackages] is called once on construction so the paywall has
-/// its offerings ready, and again after a successful purchase or restore.
+/// Thin Riverpod notifier over [PurchaseRepository]. State is the premium flag
+/// and any load error; the underlying repository reads `profiles.is_premium`
+/// from Supabase. [refresh] is called once on construction so every Pro gate
+/// reads the real status, and again when the paywall's "Check Status" button is
+/// tapped after the trader returns from the Paystack page.
 class PurchaseNotifier extends StateNotifier<PurchaseState> {
   PurchaseNotifier(this._repo)
       : super(const PurchaseState(isPro: false, isLoading: true)) {
-    _sync();
-    loadPackages();
+    refresh();
   }
 
   final PurchaseRepository _repo;
 
-  Future<void> _sync() async {
-    try {
-      // copyWith (not a fresh state) so a concurrent loadPackages() result is
-      // preserved — replacing the state here would wipe the offerings.
-      final bool isPro = await _repo.isPro();
-      // Segment crash reports by entitlement tier. 'free'/'pro' only — never
-      // an account id, email or purchase receipt.
-      TelemetryService.instance.setAppTier(isPro ? 'pro' : 'free');
-      state = state.copyWith(isPro: isPro);
-    } catch (e) {
-      state = state.copyWith(error: e);
-    }
-  }
-
-  /// Loads the store offerings, preserving the current pro status. Sets
+  /// Re-reads the premium flag from `profiles.is_premium`. Sets
   /// [PurchaseState.isLoading] while the request is in flight and records any
   /// failure on [PurchaseState.error] as a trader-safe message.
-  Future<void> loadPackages() async {
+  Future<void> refresh() async {
     state = state.copyWith(isLoading: true);
     try {
-      final List<Object> packages = await _repo.loadPackages();
-      state = state.copyWith(isLoading: false, packages: packages);
+      final bool isPro = await _repo.isPro();
+      // Segment crash reports by tier. 'free'/'pro' only — never an account id,
+      // email or receipt.
+      TelemetryService.instance.setAppTier(isPro ? 'pro' : 'free');
+      state = state.copyWith(isPro: isPro, isLoading: false);
     } catch (e) {
       state = state.copyWith(isLoading: false, error: e);
     }
@@ -282,30 +266,12 @@ class PurchaseNotifier extends StateNotifier<PurchaseState> {
 
   /// Proxy to the underlying repository stream.
   Stream<bool> watchProStatus() => _repo.watchProStatus();
-
-  Future<void> purchase(Object package) async {
-    try {
-      await _repo.purchase(package);
-      await _sync();
-    } catch (e) {
-      state = state.copyWith(error: e);
-    }
-  }
-
-  Future<void> restore() async {
-    try {
-      await _repo.restore();
-      await _sync();
-    } catch (e) {
-      state = state.copyWith(error: e);
-    }
-  }
 }
 
 
 /// The single place that chooses mock vs live and hands the notifier its
 /// repository: [Services.instance.purchases] is `MockPurchaseRepository()` in
-/// mock mode and `RevenueCatPurchaseRepository()` otherwise (see
+/// mock mode and `SupabasePurchaseRepository()` otherwise (see
 /// [Services.purchases]), so the UI can run fully offline until keys exist.
 final StateNotifierProvider<PurchaseNotifier, PurchaseState>
 purchasesProvider =
