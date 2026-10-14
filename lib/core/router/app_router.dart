@@ -17,6 +17,7 @@ import '../constants/app_strings.dart';
 import '../services/auth_provider.dart';
 import '../services/auth_repository.dart';
 import '../theme/app_colors.dart';
+import '../widgets/splash_screen.dart';
 
 /// Small [ChangeNotifier] the router listens to. [routerProvider] pings it whenever the signed-in
 /// user changes, which makes go_router re-run its redirect without us navigating by hand.
@@ -34,15 +35,23 @@ final Provider<GoRouter> routerProvider = Provider<GoRouter>((Ref ref) {
   );
 
   final GoRouter router = GoRouter(
-    initialLocation: '/guard',
+    initialLocation: '/splash',
     refreshListenable: refresh,
     redirect: (BuildContext context, GoRouterState state) {
       final AppUser? user = ref.read(authProvider);
       final bool atAuth = state.matchedLocation == '/auth';
+      final bool atSplash = state.matchedLocation == '/splash';
+      // The splash owns its own timed handoff (`SplashScreen.dwell`);
+      // never redirect away from it, or it would never be visible.
+      if (atSplash) return null;
       if (user == null) return atAuth ? null : '/auth';
       return atAuth ? '/guard' : null;
     },
     routes: <RouteBase>[
+      GoRoute(
+        path: '/splash',
+        builder: (_, __) => const SplashScreen(),
+      ),
       GoRoute(
         path: '/auth',
         builder: (_, __) => const AuthScreen(),

@@ -70,7 +70,16 @@ flutter_launcher_icons:
 flutter_native_splash:
   color: "#0A0E17"
   image: "assets/images/splash_logo.png"
+  # `fill` scales the logo up to fill the drawable while preserving the
+  # source bitmap's aspect (no stretch). `center` (the default) renders it
+  # at intrinsic size, which is why the logo looked tiny on-device.
+  android_gravity: fill
+  # `scaleAspectFill` is the iOS counterpart: fills the LaunchImage view
+  # while keeping aspect ratio (cropping overflow instead of distorting).
+  ios_content_mode: scaleAspectFill
+  fullscreen: true
   android_12:
     color: "#0A0E17"
     image: "assets/images/splash_logo.png"
+    icon_background_color: "#0A0E17"
   ios: true
