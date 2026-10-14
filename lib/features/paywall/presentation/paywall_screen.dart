@@ -8,36 +8,100 @@ import '../../../core/services/telemetry_service.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_text_styles.dart';
 
-/// TradeGuard Pro paywall — Paystack Payment Page flow.
+/// TradeGuard Pro paywall — Flutterwave Payment Link flow.
 ///
 /// The simplest possible flow: no store SDK, no subscription table, just a
-/// boolean. The trader taps **Subscribe** and the Paystack Payment Page opens
-/// in the device browser. Paystack charges the card and calls the
-/// `paystack-webhook` Edge Function, which flips `profiles.is_premium` to true.
-/// The trader returns, taps **I Have Subscribed / Check Status**, and this
-/// screen re-reads that flag: on success it shows a confirmation, closes the
-/// paywall and the rest of the app unlocks (every Pro gate reads
-/// [purchasesProvider].isPro).
+/// boolean. The trader picks a tier, taps **Subscribe** and the Flutterwave
+/// Payment Link opens in the device browser. Flutterwave charges the card and
+/// calls the `flutterwave-webhook` Edge Function, which flips
+/// `profiles.is_premium` to true. The trader returns, taps
+/// **I Have Subscribed / Check Status**, and this screen re-reads that flag:
+/// on success it shows a confirmation, closes the paywall and the rest of the
+/// app unlocks (every Pro gate reads [purchasesProvider].isPro).
 ///
 /// Three states, read from [purchasesProvider]:
 ///   * **loading** — a spinner while the flag is (re)read;
 ///   * **Pro**     — a confirmation with a checkmark and no purchase UI;
-///   * **offers**  — the Subscribe + Check Status actions and the verbatim risk
-///                   disclaimer (a paywall is a compliance surface).
+///   * **offers**  — the tier picker + Subscribe + Check Status actions and
+///                   the verbatim risk disclaimer (a paywall is a compliance
+///                   surface).
 ///
 /// The Equity Guard, Kill Switch and STOP button are deliberately NOT part of
 /// this paywall — they are safety features and stay free for every trader.
 class PaywallScreen extends ConsumerStatefulWidget {
   const PaywallScreen({super.key});
 
+  static const String monthlyUrl =
+      'https://flutterwave.com/pay/MONTHLY_LINK_HERE';
+  static const String quarterlyUrl =
+      'https://flutterwave.com/pay/QUARTERLY_LINK_HERE';
+  static const String yearlyUrl =
+      'https://flutterwave.com/pay/YEARLY_LINK_HERE';
+
   @override
   ConsumerState<PaywallScreen> createState() => _PaywallScreenState();
+}
+
+/// The three Flutterwave billing tiers.
+enum PaywallTier { monthly, quarterly, yearly }
+
+extension PaywallTierX on PaywallTier {
+  /// The Flutterwave Payment Link for this tier.
+  String get url {
+    switch (this) {
+      case PaywallTier.monthly:
+        return PaywallScreen.monthlyUrl;
+      case PaywallTier.quarterly:
+        return PaywallScreen.quarterlyUrl;
+      case PaywallTier.yearly:
+        return PaywallScreen.yearlyUrl;
+    }
+  }
+
+  /// Short title shown on the selectable card.
+  String get title {
+    switch (this) {
+      case PaywallTier.monthly:
+        return 'Monthly';
+      case PaywallTier.quarterly:
+        return 'Quarterly';
+      case PaywallTier.yearly:
+        return 'Yearly';
+    }
+  }
+
+  /// Price line shown on the selectable card (USD only).
+  String get priceLine {
+    switch (this) {
+      case PaywallTier.monthly:
+        return r'$15/month';
+      case PaywallTier.quarterly:
+        return r'$40/3 months (Save 11%)';
+      case PaywallTier.yearly:
+        return r'$150/year (Save 16%)';
+    }
+  }
+
+  /// Subscribe button label for this tier (USD only).
+  String get subscribeLabel {
+    switch (this) {
+      case PaywallTier.monthly:
+        return r'Subscribe for $15/month';
+      case PaywallTier.quarterly:
+        return r'Subscribe for $40/3 months';
+      case PaywallTier.yearly:
+        return r'Subscribe for $150/year';
+    }
+  }
 }
 
 class _PaywallScreenState extends ConsumerState<PaywallScreen> {
   /// True while a "Check Status" tap is re-reading the flag, so the button can
   /// show its own busy state separate from the initial load.
   bool _checking = false;
+
+  /// Currently selected billing tier. Defaults to monthly.
+  PaywallTier _selected = PaywallTier.monthly;
 
   @override
   void initState() {
@@ -73,6 +137,9 @@ class _PaywallScreenState extends ConsumerState<PaywallScreen> {
             : state.isPro
                 ? const _ProMember()
                 : _Offers(
+                    selected: _selected,
+                    onSelect: (PaywallTier tier) =>
+                        setState(() => _selected = tier),
                     checking: _checking,
                     onSubscribe: _subscribe,
                     onCheckStatus: _checkStatus,
@@ -81,12 +148,13 @@ class _PaywallScreenState extends ConsumerState<PaywallScreen> {
     );
   }
 
-  /// Opens the Paystack Payment Page in the device's external browser. A failure
-  /// to launch (no browser, or the launcher threw) is reported rather than
-  /// swallowed, so the tap never silently does nothing. The URL is a public
-  /// payment link, not a secret; nothing sensitive is logged.
+  /// Opens the Flutterwave Payment Link for the currently selected tier in the
+  /// device's external browser. A failure to launch (no browser, or the
+  /// launcher threw) is reported rather than swallowed, so the tap never
+  /// silently does nothing. The URL is a public payment link, not a secret;
+  /// nothing sensitive is logged.
   Future<void> _subscribe() async {
-    final Uri uri = Uri.parse(_Strings.paystackUrl);
+    final Uri uri = Uri.parse(_selected.url);
     try {
       final bool launched =
           await launchUrl(uri, mode: LaunchMode.externalApplication);
@@ -131,14 +199,19 @@ class _PaywallScreenState extends ConsumerState<PaywallScreen> {
   }
 }
 
-/// The offers list: hero, the two actions, and the verbatim risk disclaimer.
+/// The offers list: hero, tier picker, the two actions, and the verbatim risk
+/// disclaimer.
 class _Offers extends StatelessWidget {
   const _Offers({
+    required this.selected,
+    required this.onSelect,
     required this.checking,
     required this.onSubscribe,
     required this.onCheckStatus,
   });
 
+  final PaywallTier selected;
+  final ValueChanged<PaywallTier> onSelect;
   final bool checking;
   final VoidCallback onSubscribe;
   final VoidCallback onCheckStatus;
@@ -150,12 +223,23 @@ class _Offers extends StatelessWidget {
       children: <Widget>[
         _hero(),
         const SizedBox(height: 20),
-        // The primary action: open the Paystack Payment Page in the browser.
+        // Tier picker: three selectable cards bound to the state-owned tier.
+        for (final PaywallTier tier in PaywallTier.values) ...<Widget>[
+          _TierCard(
+            tier: tier,
+            selected: tier == selected,
+            onTap: () => onSelect(tier),
+          ),
+          const SizedBox(height: 8),
+        ],
+        const SizedBox(height: 12),
+        // The primary action: open the Flutterwave Payment Link for the
+        // selected tier in the browser.
         SizedBox(
           width: double.infinity,
           child: ElevatedButton(
             onPressed: onSubscribe,
-            child: const Text(_Strings.subscribe),
+            child: Text(selected.subscribeLabel),
           ),
         ),
         const SizedBox(height: 12),
@@ -207,10 +291,61 @@ class _Offers extends StatelessWidget {
             SizedBox(height: 6),
             Text(_Strings.heroBody, style: AppTextStyles.muted),
             SizedBox(height: 12),
-            Text(_Strings.price, style: AppTextStyles.metric),
+            Text(_Strings.priceHint, style: AppTextStyles.metric),
           ],
         ),
       );
+}
+
+/// One selectable billing tier: a card with a radio indicator, the tier title
+/// and the USD price line.
+class _TierCard extends StatelessWidget {
+  const _TierCard({
+    required this.tier,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final PaywallTier tier;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final Color border = selected ? AppColors.primary : AppColors.divider;
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          color: AppColors.surface,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: border, width: selected ? 2 : 1),
+        ),
+        child: Row(
+          children: <Widget>[
+            Icon(
+              // ignore: avoid_bool_literals_in_conditional_expressions
+              selected ? Icons.radio_button_checked : Icons.radio_button_off,
+              color: selected ? AppColors.primary : AppColors.textMuted,
+            ),
+            const SizedBox(width: 4),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  Text(tier.title, style: AppTextStyles.h2),
+                  const SizedBox(height: 2),
+                  Text(tier.priceLine, style: AppTextStyles.muted),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
 /// The Pro confirmation. No purchase UI — a member has nothing to buy.
@@ -254,8 +389,7 @@ class _Strings {
   static const String heroBody =
       'AI chart analysis, AI trade reviews and copy-trading. The Equity Guard, '
       'Kill Switch and STOP button stay free for every trader.';
-  static const String price = '₦14,999 / month';
-  static const String subscribe = 'Subscribe for ₦14,999/month';
+  static const String priceHint = r'From $15/month — pick a plan below';
   static const String checkStatus = 'I Have Subscribed / Check Status';
   static const String activated = 'Subscription active — welcome to Pro!';
   static const String notYet =
@@ -266,10 +400,4 @@ class _Strings {
   static const String proMemberTitle = 'You are a Pro member';
   static const String proMemberBody =
       'Every premium tool is unlocked. Thanks for supporting TradeGuard.';
-
-  /// The Paystack Payment Page link. Replace the placeholder with the real
-  /// payment page URL (Paystack Dashboard → Payment Pages) before release.
-  static const String paystackUrl =
-      'https://paystack.com/pay/YOUR_PAYMENT_PAGE_LINK_HERE';
 }
-

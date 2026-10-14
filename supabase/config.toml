@@ -61,10 +61,10 @@ verify_jwt = true
 [functions.purge-account]
 verify_jwt = true
 
-# paystack-webhook is called by Paystack's servers (not the app), so it carries no Supabase
+# flutterwave-webhook is called by Flutterwave's servers (not the app), so it carries no Supabase
 # JWT — verify_jwt must be OFF or the platform would reject every webhook. Authenticity is
-# the HMAC-SHA512 `x-paystack-signature` header, verified inside the function against
-# PAYSTACK_SECRET_KEY. It writes profiles.is_premium with the service role (RLS is read-only
+# the `verif-hash` header, verified inside the function against
+# FLUTTERWAVE_SECRET_KEY. It writes profiles.is_premium with the service role (RLS is read-only
 # for users, migration 0012).
-[functions.paystack-webhook]
+[functions.flutterwave-webhook]
 verify_jwt = false

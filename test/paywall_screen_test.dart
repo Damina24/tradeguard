@@ -44,7 +44,7 @@ class _FakePurchaseRepository implements PurchaseRepository {
 }
 
 /// Records every URL handed to `launchUrl` so a test can assert the exact
-/// Paystack Payment Page link without a real browser.
+/// Flutterwave Payment Link without a real browser.
 class _RecordingLauncher extends UrlLauncherPlatform {
   final List<String> launchedUrls = <String>[];
 
@@ -104,23 +104,50 @@ void main() {
     await tester.pumpWidget(_app(_FakePurchaseRepository()));
     await tester.pumpAndSettle();
 
-    expect(find.text('Subscribe for ₦14,999/month'), findsOneWidget);
+    expect(find.text(r'Subscribe for $15/month'), findsOneWidget);
+    expect(find.text('Monthly'), findsOneWidget);
+    expect(find.text(r'$15/month'), findsOneWidget);
+    expect(find.text('Quarterly'), findsOneWidget);
+    expect(find.text(r'$40/3 months (Save 11%)'), findsOneWidget);
+    expect(find.text('Yearly'), findsOneWidget);
+    expect(find.text(r'$150/year (Save 16%)'), findsOneWidget);
     expect(find.text('I Have Subscribed / Check Status'), findsOneWidget);
     // The paywall is a compliance surface, so the disclaimer is always shown.
     expect(find.textContaining('high-risk'), findsOneWidget);
   });
 
-  testWidgets('Subscribe opens the Paystack Payment Page in the browser',
+  testWidgets('Subscribe opens the Flutterwave Payment Link in the browser',
       (WidgetTester tester) async {
     _usePhoneSurface(tester);
     await tester.pumpWidget(_app(_FakePurchaseRepository()));
     await tester.pumpAndSettle();
 
-    await tester.tap(find.text('Subscribe for ₦14,999/month'));
+    await tester.tap(find.text(r'Subscribe for $15/month'));
     await tester.pumpAndSettle();
 
-    // The exact Paystack Payment Page link is launched externally.
-    expect(launcher.launchedUrls, contains('https://paystack.com/pay/YOUR_PAYMENT_PAGE_LINK_HERE'));
+    // The monthly Flutterwave Payment Link is launched externally by default.
+    expect(
+      launcher.launchedUrls,
+      contains('https://flutterwave.com/pay/MONTHLY_LINK_HERE'),
+    );
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('Selecting Quarterly opens the quarterly Flutterwave link',
+      (WidgetTester tester) async {
+    _usePhoneSurface(tester);
+    await tester.pumpWidget(_app(_FakePurchaseRepository()));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Quarterly'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text(r'Subscribe for $40/3 months'));
+    await tester.pumpAndSettle();
+
+    expect(
+      launcher.launchedUrls,
+      contains('https://flutterwave.com/pay/QUARTERLY_LINK_HERE'),
+    );
     expect(tester.takeException(), isNull);
   });
 
@@ -133,11 +160,12 @@ void main() {
     expect(find.text('You are a Pro member'), findsOneWidget);
     expect(find.byIcon(Icons.check_circle), findsOneWidget);
     // No purchase surface for someone who already owns it.
-    expect(find.text('Subscribe for ₦14,999/month'), findsNothing);
+    expect(find.text(r'Subscribe for $15/month'), findsNothing);
     expect(find.text('I Have Subscribed / Check Status'), findsNothing);
   });
 
-  testWidgets('Check Status on a not-yet-premium trader reports it did not find it',
+  testWidgets(
+      'Check Status on a not-yet-premium trader reports it did not find it',
       (WidgetTester tester) async {
     _usePhoneSurface(tester);
     await tester.pumpWidget(_app(_FakePurchaseRepository(pro: false)));
@@ -148,7 +176,10 @@ void main() {
 
     // Not premium yet: the trader is told the payment has not been seen, and
     // the paywall stays open.
-    expect(find.textContaining('could not find your subscription'), findsOneWidget);
+    expect(
+      find.textContaining('could not find your subscription'),
+      findsOneWidget,
+    );
     expect(tester.takeException(), isNull);
   });
 }

@@ -1,20 +1,20 @@
-// Tests for `paystack-webhook`. Mirrors the `delete_account_test.ts` harness: a tiny
+// Tests for `flutterwave-webhook`. Mirrors the `delete_account_test.ts` harness: a tiny
 // `test`/`eq`/`ok` runner, no framework, no runtime, no Supabase project. It drives the
-// pure logic in `shared.ts` so the contract Paystack and the store reviewers care about is
+// pure logic in `shared.ts` so the contract Flutterwave and the store reviewers care about is
 // verified in CI:
-//   * signature verification — a correct HMAC-SHA512 passes, a wrong secret / wrong body /
-//     missing header fails, and a digest of different length is rejected;
-//   * event filtering — only `charge.success` is acted on; every other event is ignored;
-//   * email extraction — the customer email is read from data.customer.email and a payload
-//     with no email yields null;
+//   * signature verification — the `verif-hash` header must equal the secret hash;
+//     a wrong hash / missing header / empty secret fails;
+//   * event filtering — only `charge.completed` / `subscription.created` are acted on;
+//     every other event is ignored;
+//   * email extraction — the customer email is read from the Flutterwave payload
+//     and a payload with no email yields null;
 //   * masking — `maskEmail` never leaks the full local part or domain.
 //
-// Run with:  node supabase/functions/paystack-webhook/paystack_webhook_test.ts
+// Run with:  node supabase/functions/flutterwave-webhook/flutterwave_webhook_test.ts
 // (Node 22+ strips the types natively; `crypto.subtle` is global in Node 18+. `deno test`
 // works too.)
 
 import {
-  computeSignature,
   extractCustomerEmail,
   isChargeSuccess,
   maskEmail,
@@ -37,36 +37,24 @@ function ok(value: boolean, note = ''): void {
   if (!value) throw new Error(`expected truthy ${note}`);
 }
 
-const SECRET = 'sk_test_abcdef0123456789';
+const SECRET = 'FLUTWSECK_TEST-abcdef0123456789';
 const PAYLOAD = {
-  event: 'charge.success',
+  event: 'charge.completed',
   data: { customer: { email: 'john.doe@example.com' } },
 };
-// The raw body is what Paystack signs, so it is kept as a string for the signature tests.
+// The Flutterwave `verif-hash` header carries the secret hash itself.
 const BODY = JSON.stringify(PAYLOAD);
 
 // ---------------------------------------------------------------------------------------------
 // Signature verification
 // ---------------------------------------------------------------------------------------------
 
-test('a correct HMAC-SHA512 signature verifies', async () => {
-  const sig = await computeSignature(BODY, SECRET);
-  ok(sig.length === 128, `sha512 hex should be 128 chars, got ${sig.length}`);
-  eq(await verifyWebhook(BODY, sig, SECRET), true);
+test('a matching verif-hash verifies', async () => {
+  eq(await verifyWebhook(BODY, SECRET, SECRET), true);
 });
 
-test('a signature from the wrong secret is rejected', async () => {
-  const sig = await computeSignature(BODY, 'sk_wrong_secret');
-  eq(await verifyWebhook(BODY, sig, SECRET), false);
-});
-
-test('a signature over a different body is rejected', async () => {
-  const sig = await computeSignature(BODY, SECRET);
-  const other = JSON.stringify({
-    event: 'charge.success',
-    data: { customer: { email: 'attacker@evil.com' } },
-  });
-  eq(await verifyWebhook(other, sig, SECRET), false);
+test('a wrong verif-hash is rejected', async () => {
+  eq(await verifyWebhook(BODY, 'wrong-hash', SECRET), false);
 });
 
 test('a missing header signature is rejected', async () => {
@@ -74,8 +62,7 @@ test('a missing header signature is rejected', async () => {
 });
 
 test('an empty secret is rejected', async () => {
-  const sig = await computeSignature(BODY, SECRET);
-  eq(await verifyWebhook(BODY, sig, ''), false);
+  eq(await verifyWebhook(BODY, SECRET, ''), false);
 });
 
 test('signaturesMatch rejects a different-length digest', () => {
@@ -88,10 +75,11 @@ test('signaturesMatch rejects a different-length digest', () => {
 // Event filtering
 // ---------------------------------------------------------------------------------------------
 
-test('only charge.success is acted on', () => {
-  eq(isChargeSuccess({ event: 'charge.success' }), true);
-  eq(isChargeSuccess({ event: 'subscription.create' }), false);
-  eq(isChargeSuccess({ event: 'transfer.success' }), false);
+test('only charge.completed / subscription.created are acted on', () => {
+  eq(isChargeSuccess({ event: 'charge.completed' }), true);
+  eq(isChargeSuccess({ event: 'subscription.created' }), true);
+  eq(isChargeSuccess({ event: 'charge.success' }), false);
+  eq(isChargeSuccess({ event: 'transfer.completed' }), false);
   eq(isChargeSuccess({}), false);
   eq(isChargeSuccess(null), false);
 });
@@ -105,10 +93,22 @@ test('the customer email is read from data.customer.email', () => {
 });
 
 test('a payload with no customer email yields null', () => {
-  eq(extractCustomerEmail({ event: 'charge.success', data: {} }), null);
-  eq(extractCustomerEmail({ event: 'charge.success' }), null);
-  eq(extractCustomerEmail({ event: 'charge.success', data: { customer: {} } }), null);
-  eq(extractCustomerEmail({ event: 'charge.success', data: { customer: { email: 42 } } }), null);
+  eq(extractCustomerEmail({ event: 'charge.completed', data: {} }), null);
+  eq(extractCustomerEmail({ event: 'charge.completed' }), null);
+  eq(
+    extractCustomerEmail({
+      event: 'charge.completed',
+      data: { customer: {} },
+    }),
+    null,
+  );
+  eq(
+    extractCustomerEmail({
+      event: 'charge.completed',
+      data: { customer: { email: 42 } },
+    }),
+    null,
+  );
   eq(extractCustomerEmail(null), null);
 });
 
@@ -146,7 +146,7 @@ async function main(): Promise<void> {
     );
     throw new Error(`${passed} passed, ${failures.length} failed`);
   }
-  console.log(`paystack-webhook: ${passed} tests passed`);
+  console.log(`flutterwave-webhook: ${passed} tests passed`);
 }
 
 await main();

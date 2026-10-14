@@ -1,43 +1,68 @@
-// Pure logic for the `paystack-webhook` Edge Function: signature verification,
+// Pure logic for the `flutterwave-webhook` Edge Function: signature verification,
 // event filtering, customer-email extraction and email masking.
 //
 // Split out of `index.ts` for the same reason as `copy-signal/shared.ts` — this
-// module touches neither `Deno.env` nor the network, so `paystack_webhook_test.ts`
+// module touches neither `Deno.env` nor the network, so `flutterwave_webhook_test.ts`
 // verifies every rule in CI (Node 22+ or `deno test`) without a runtime and
 // without a Supabase project. `index.ts` imports from here and adds only I/O.
 //
 // ── Contract ──────────────────────────────────────────────────────────────────
-//   Paystack POSTs a JSON body and signs the RAW bytes with HMAC-SHA512 keyed by
-//   the secret key, sending the hex digest in the `x-paystack-signature` header.
-//   We recompute that digest over the exact bytes we received and compare it in
-//   constant time BEFORE parsing or trusting anything in the body.
+//   Flutterwave POSTs a JSON body and sends the secret hash in the `verif-hash`
+//   header. We compare that header against FLUTTERWAVE_SECRET_KEY in constant
+//   time BEFORE parsing or trusting anything in the body.
 //
 // ── Security contract ─────────────────────────────────────────────────────────
-//   * **Signature first, always.** The body is read as raw text and verified
-//     before it is parsed; a re-serialized body would not match the signature.
-//   * **Only `charge.success` grants premium.** Every other event is acknowledged
-//     with 200 so Paystack stops retrying it, but changes nothing.
+//   * **Signature first, always.** The `verif-hash` header is verified before
+//     the body is parsed or trusted.
+//   * **Only `charge.completed` / `subscription.created` grant premium.** Every
+//     other event is acknowledged with 200 so Flutterwave stops retrying it,
+//     but changes nothing.
 //   * **Emails and secrets are never logged.** `maskEmail` keeps at most the
 //     first character of the local part and domain; the raw address, the request
 //     body and the signature header are never written to a log.
 
-export const PAYSTACK_EVENT_CHARGE_SUCCESS = 'charge.success';
+export const FLUTTERWAVE_EVENT_CHARGE_COMPLETED = 'charge.completed';
+export const FLUTTERWAVE_EVENT_SUBSCRIPTION_CREATED = 'subscription.created';
 
-/** True when the payload's `event` is exactly `charge.success`. */
+/** True when the payload's `event` grants premium (`charge.completed`). */
 export function isChargeSuccess(payload: unknown): boolean {
   if (typeof payload !== 'object' || payload === null) return false;
-  return (payload as Record<string, unknown>).event === PAYSTACK_EVENT_CHARGE_SUCCESS;
+  const event = (payload as Record<string, unknown>).event;
+  return (
+    event === FLUTTERWAVE_EVENT_CHARGE_COMPLETED ||
+    event === FLUTTERWAVE_EVENT_SUBSCRIPTION_CREATED
+  );
 }
 
-/** The customer email from a Paystack payload (`data.customer.email`), or null. */
+/**
+ * The customer email from a Flutterwave payload.
+ * Supports `data.customer.email`, `data.customer_email` and top-level
+ * `customer.email` shapes, or null.
+ */
 export function extractCustomerEmail(payload: unknown): string | null {
   if (typeof payload !== 'object' || payload === null) return null;
-  const data = (payload as Record<string, unknown>).data;
-  if (typeof data !== 'object' || data === null) return null;
-  const customer = (data as Record<string, unknown>).customer;
-  if (typeof customer !== 'object' || customer === null) return null;
-  const email = (customer as Record<string, unknown>).email;
-  return typeof email === 'string' && email.includes('@') ? email : null;
+  const root = payload as Record<string, unknown>;
+  const candidates: unknown[] = [];
+  const data = root.data;
+  if (typeof data === 'object' && data !== null) {
+    const d = data as Record<string, unknown>;
+    const customer = d.customer;
+    if (typeof customer === 'object' && customer !== null) {
+      candidates.push((customer as Record<string, unknown>).email);
+    }
+    candidates.push(d.customer_email);
+    candidates.push(d.email);
+  }
+  const customer = root.customer;
+  if (typeof customer === 'object' && customer !== null) {
+    candidates.push((customer as Record<string, unknown>).email);
+  }
+  for (const candidate of candidates) {
+    if (typeof candidate === 'string' && candidate.includes('@')) {
+      return candidate;
+    }
+  }
+  return null;
 }
 
 /**
@@ -58,19 +83,12 @@ export function maskEmail(email: string): string {
   return `${l}***@${d}***${tld}`;
 }
 
-/** HMAC-SHA512 of `rawBody` keyed by `secret`, hex-encoded (Paystack's scheme). */
-export async function computeSignature(rawBody: string, secret: string): Promise<string> {
-  const key = await crypto.subtle.importKey(
-    'raw',
-    new TextEncoder().encode(secret),
-    { name: 'HMAC', hash: 'SHA-512' },
-    false,
-    ['sign'],
-  );
-  const mac = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(rawBody));
-  return Array.from(new Uint8Array(mac))
-    .map((b) => b.toString(16).padStart(2, '0'))
-    .join('');
+/** Flutterwave's `verif-hash` scheme: the header carries the secret hash. */
+export async function computeSignature(
+  _rawBody: string,
+  secret: string,
+): Promise<string> {
+  return secret;
 }
 
 /** Length-safe, timing-independent string equality for hex digests. */

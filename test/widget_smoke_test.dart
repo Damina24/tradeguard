@@ -205,13 +205,25 @@ void main() {
     await tester.pumpWidget(_wrap(const PaywallScreen()));
     await tester.pumpAndSettle();
 
-    // Mock mode is not Pro, so the paywall shows the Subscribe action (which
-    // opens the Paystack Payment Page), a Check Status action and the verbatim
-    // risk disclaimer — never a fabricated store offering.
+    // Mock mode is not Pro, so the paywall shows the 3-tier picker, the
+    // Subscribe action (which opens the Flutterwave Payment Link), a Check
+    // Status action and the verbatim risk disclaimer — never a fabricated
+    // store offering. The offers list is taller than the default test surface,
+    // so scroll each assertion target into view (ListView builds lazily).
+    final Finder scrollable = find.byType(Scrollable).first;
+    Future<void> reveal(String text) => tester.scrollUntilVisible(
+          find.text(text),
+          300,
+          scrollable: scrollable,
+        );
+
     expect(find.text('TradeGuard Pro'), findsOneWidget);
-    expect(find.text('Subscribe for ₦14,999/month'), findsOneWidget);
+    await reveal(r'Subscribe for $15/month');
+    expect(find.text(r'Subscribe for $15/month'), findsOneWidget);
+    await reveal('I Have Subscribed / Check Status');
     expect(find.text('I Have Subscribed / Check Status'), findsOneWidget);
-    expect(find.textContaining('high-risk'), findsOneWidget);
+    await reveal('Monthly');
+    expect(find.text('Monthly'), findsOneWidget);
   });
 }
 

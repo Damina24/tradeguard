@@ -149,8 +149,8 @@ class SettingsScreen extends ConsumerWidget {
   }
 
   /// Re-reads the trader's premium flag (`profiles.is_premium`) and reports the
-  /// result. A Paystack payment is confirmed out-of-band by the
-  /// `paystack-webhook` Edge Function, so "checking status" is just a fresh
+  /// result. A Flutterwave payment is confirmed out-of-band by the
+  /// `flutterwave-webhook` Edge Function, so "checking status" is just a fresh
   /// read of that boolean. Outcomes are neutral, trader-safe copy; never a raw
   /// error string.
   Future<void> _checkStatus(BuildContext context, WidgetRef ref) async {

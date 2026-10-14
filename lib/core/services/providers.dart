@@ -206,7 +206,7 @@ copySettingsProvider =
 final Provider<DeleteAccountRepository> deleteAccountRepositoryProvider =
     Provider<DeleteAccountRepository>((Ref ref) => Services.instance.deleteAccount);
 
-// ---- Purchases (Paystack premium toggle) ----
+// ---- Purchases (Flutterwave premium toggle) ----
 
 /// UI state exposed by [PurchaseNotifier].
 ///
@@ -239,7 +239,7 @@ class PurchaseState {
 /// and any load error; the underlying repository reads `profiles.is_premium`
 /// from Supabase. [refresh] is called once on construction so every Pro gate
 /// reads the real status, and again when the paywall's "Check Status" button is
-/// tapped after the trader returns from the Paystack page.
+/// tapped after the trader returns from the Flutterwave page.
 class PurchaseNotifier extends StateNotifier<PurchaseState> {
   PurchaseNotifier(this._repo)
       : super(const PurchaseState(isPro: false, isLoading: true)) {

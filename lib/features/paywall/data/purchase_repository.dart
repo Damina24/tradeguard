@@ -20,9 +20,9 @@ class PurchaseFailure implements Exception {
 /// Abstraction over the premium ("Pro") status check.
 ///
 /// Premium is a single boolean on the user's `profiles` row (`is_premium`),
-/// flipped to true by the `paystack-webhook` Edge Function after a Paystack
-/// `charge.success`. There is no store SDK and no subscription table: the app
-/// opens a Paystack Payment Page in the browser, then re-reads this flag.
+/// flipped to true by the `flutterwave-webhook` Edge Function after a Flutterwave
+/// `charge.completed` (or `subscription.created`). There is no store SDK and no subscription table: the app
+/// opens a Flutterwave Payment Link in the browser, then re-reads this flag.
 abstract class PurchaseRepository {
   /// The trader's current premium status, read from `profiles.is_premium`.
   Future<bool> isPro();
