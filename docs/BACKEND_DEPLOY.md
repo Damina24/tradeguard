@@ -88,6 +88,7 @@ A minute later there should be one `equity_snapshots` row per active account.
 supabase secrets set METAAPI_TOKEN=<metaapi-token>
 supabase secrets set TWELVEDATA_KEY=<twelvedata-key>
 supabase secrets set SUPABASE_SERVICE_KEY=<service_role>
+supabase secrets set YOUR_AI_API_KEY=<your-openrouter-key>
 supabase secrets set FIREBASE_SERVICE_ACCOUNT='{"type":"service_account","project_id":"…", …}'
 ```
 
@@ -96,6 +97,7 @@ supabase secrets set FIREBASE_SERVICE_ACCOUNT='{"type":"service_account","projec
 | `SUPABASE_SERVICE_KEY` | both cron workers | functions 500s |
 | `METAAPI_TOKEN` | reading live equity + syncing trades | equity falls back to the last snapshot; no trade sync |
 | `TWELVEDATA_KEY` | the `market-bars` price cache | the replay falls back to cached bars, then to `SYNTHETIC DEMO` |
+| `YOUR_AI_API_KEY` | the `ai-analyze-chart` AI analysis (OpenRouter) | chart analysis returns `503 notConfigured` |
 | `FIREBASE_SERVICE_ACCOUNT` | the 70/90 push | numbers are stored, no notification |
 
 `TWELVEDATA_KEY` is **server-side only** and must never be added to `env/dev.json`: a

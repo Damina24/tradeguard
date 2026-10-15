@@ -82,7 +82,7 @@ test('normalise keeps valid and caps lists', () => {
 });
 
 test('metadata pins model and prompt version', () => {
-  eq(ANALYSIS_MODEL, 'gpt-4o-mini');
+  eq(ANALYSIS_MODEL, 'YOUR_AI_MODEL_NAME');
   ok(PROMPT_VERSION.length > 0);
 });
 

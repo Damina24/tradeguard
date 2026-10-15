@@ -1,9 +1,10 @@
-// ai-analyze-chart — OpenAI vision analysis of a chart screenshot.
+// ai-analyze-chart — AI vision analysis of a chart screenshot via OpenRouter
+// (OpenAI-compatible chat completions endpoint).
 //
 //   POST /functions/v1/ai-analyze-chart  {image_url} -> {bias, levels[]}
 //
 // All policy lives in `./shared.ts` so the test can verify it without a
-// runtime, without `OPENAI_API_KEY` and without a Supabase project. This
+// runtime, without `YOUR_AI_API_KEY` and without a Supabase project. This
 // file adds only I/O.
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
@@ -17,7 +18,7 @@ import {
   parseModelJson,
 } from './shared.ts';
 
-const OPENAI_URL = 'https://api.openai.com/v1/chat/completions';
+const AI_BASE_URL = 'YOUR_AI_BASE_URL';
 const STORAGE_BUCKET = 'chart-uploads';
 
 type AnyRecord = Record<string, unknown>;
@@ -49,18 +50,21 @@ async function callerId(authHeader: string | null): Promise<string | null> {
   return typeof id === 'string' && id.length > 0 ? id : null;
 }
 
-async function askModel(prompt: { system: string; user: string }): Promise<
-  { content: string } | { failure: string }
-> {
-  const key = Deno.env.get('OPENAI_API_KEY');
+async function askModel(
+  prompt: { system: string; user: string },
+  dataUrl: string,
+): Promise<{ content: string } | { failure: string }> {
+  const key = Deno.env.get('YOUR_AI_API_KEY');
   if (!key) return { failure: 'notConfigured' };
   let res: Response;
   try {
-    res = await fetch(OPENAI_URL, {
+    res = await fetch(AI_BASE_URL, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${key}`,
+        'HTTP-Referer': 'https://tradeguard.app',
+        'X-Title': 'TradeGuard AI Chart Analysis',
       },
       body: JSON.stringify({
         model: ANALYSIS_MODEL,
@@ -68,7 +72,13 @@ async function askModel(prompt: { system: string; user: string }): Promise<
         response_format: { type: 'json_object' },
         messages: [
           { role: 'system', content: prompt.system },
-          { role: 'user', content: prompt.user },
+          {
+            role: 'user',
+            content: [
+              { type: 'text', text: prompt.user },
+              { type: 'image_url', image_url: { url: dataUrl } },
+            ],
+          },
         ],
       }),
     });
@@ -137,10 +147,13 @@ Deno.serve(async (req: Request): Promise<Response> => {
   }
   const dataUrl = `data:${mime};base64,${btoa(binary)}`;
   const prompt = buildPrompt();
-  const answer = await askModel({
-    system: prompt.system,
-    user: `${prompt.user}\n\n![chart](${dataUrl})`,
-  });
+  const answer = await askModel(
+    {
+      system: prompt.system,
+      user: prompt.user,
+    },
+    dataUrl,
+  );
   if ('failure' in answer) {
     const status = answer.failure === 'notConfigured' ? 503 : 502;
     return json({ ok: false, error: answer.failure }, status);
