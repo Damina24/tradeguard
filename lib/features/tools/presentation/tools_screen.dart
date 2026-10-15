@@ -6,6 +6,38 @@ import '../../../core/theme/app_text_styles.dart';
 import '../../../core/utils/formatters.dart';
 import 'calc_sheet.dart';
 
+/// Trading-session windows in UTC. Used to derive the LIVE badge from the
+/// device clock instead of a hardcoded flag.
+class SessionWindow {
+  const SessionWindow(this.name, this.openUtcMins, this.closeUtcMins);
+
+  final String name;
+
+  /// Minutes since 00:00 UTC.
+  final int openUtcMins;
+  final int closeUtcMins;
+
+  /// True when [nowUtcMinutes] falls inside the window (handles overnight Asia).
+  bool isLive(int nowUtcMinutes) {
+    if (openUtcMins <= closeUtcMins) {
+      return nowUtcMinutes >= openUtcMins && nowUtcMinutes < closeUtcMins;
+    }
+    return nowUtcMinutes >= openUtcMins || nowUtcMinutes < closeUtcMins;
+  }
+
+  String get rangeLabel =>
+      '${_fmt(openUtcMins)} – ${_fmt(closeUtcMins)} UTC';
+
+  static String _fmt(int mins) =>
+      '${(mins ~/ 60).toString().padLeft(2, '0')}:${(mins % 60).toString().padLeft(2, '0')}';
+}
+
+const List<SessionWindow> sessionWindows = <SessionWindow>[
+  SessionWindow('London', 8 * 60, 16 * 60 + 30),
+  SessionWindow('New York', 13 * 60 + 30, 22 * 60),
+  SessionWindow('Asia', 23 * 60, 8 * 60),
+];
+
 class ToolsScreen extends StatelessWidget {
   const ToolsScreen({super.key});
 
@@ -69,22 +101,27 @@ class ToolsScreen extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 20),
-          const Text('ECONOMIC CALENDAR', style: AppTextStyles.label),
-          const SizedBox(height: 8),
-          _event('USD', 'Non-Farm Payrolls', 'High', '14:30'),
-          _event('EUR', 'ECB Rate Decision', 'High', '13:45'),
-          _event('GBP', 'CPI y/y', 'Medium', '08:00'),
-          _event('USD', 'FOMC Minutes', 'High', '20:00'),
-          const SizedBox(height: 20),
           const Text('SESSIONS', style: AppTextStyles.label),
           const SizedBox(height: 8),
-          _session('London', '08:00', '16:30', true),
-          _session('New York', '13:30', '22:00', false),
-          _session('Asia', '23:00', '08:00', false),
+          Builder(
+            builder: (BuildContext context) {
+              final DateTime nowUtc = DateTime.now().toUtc();
+              final int nowMins = nowUtc.hour * 60 + nowUtc.minute;
+              return Column(
+                children: <Widget>[
+                  for (final SessionWindow s in sessionWindows)
+                    _session(
+                      s.name,
+                      s.rangeLabel,
+                      s.isLive(nowMins),
+                    ),
+                ],
+              );
+            },
+          ),
           const SizedBox(height: 12),
           const Text(
-            'Session times are UTC and indicative. Calendar data is factual and not '
-            'editorial news.',
+            'Session times are UTC and indicative.',
             style: AppTextStyles.disclaimer,
           ),
         ],
@@ -92,27 +129,7 @@ class ToolsScreen extends StatelessWidget {
     );
   }
 
-  Widget _event(String cur, String name, String impact, String time) {
-    final Color color = switch (impact) {
-      'High' => AppColors.danger,
-      'Medium' => AppColors.warning,
-      _ => AppColors.textMuted,
-    };
-    return Card(
-      margin: const EdgeInsets.only(bottom: 8),
-      child: ListTile(
-        leading: CircleAvatar(
-          backgroundColor: AppColors.surfaceAlt,
-          child: Text(cur, style: AppTextStyles.label),
-        ),
-        title: Text(name, style: AppTextStyles.body),
-        subtitle: Text('$impact impact', style: AppTextStyles.muted.copyWith(color: color)),
-        trailing: Text(time, style: AppTextStyles.body),
-      ),
-    );
-  }
-
-  Widget _session(String name, String open, String close, bool live) => Card(
+  Widget _session(String name, String range, bool live) => Card(
         margin: const EdgeInsets.only(bottom: 8),
         child: ListTile(
           leading: Icon(
@@ -121,13 +138,13 @@ class ToolsScreen extends StatelessWidget {
             color: live ? AppColors.primary : AppColors.textMuted,
           ),
           title: Text(name, style: AppTextStyles.body),
-          subtitle: Text('$open – $close UTC', style: AppTextStyles.muted),
+          subtitle: Text(range, style: AppTextStyles.muted),
           trailing: live
               ? Text(
                   'LOCAL ${Formatters.time(DateTime.now())}',
                   style: AppTextStyles.label.copyWith(color: AppColors.primary),
                 )
-              : null,
+              : const Text('Closed', style: AppTextStyles.muted),
         ),
       );
 }
