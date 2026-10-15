@@ -31,12 +31,9 @@ import '../../../core/theme/app_text_styles.dart';
 class PaywallScreen extends ConsumerStatefulWidget {
   const PaywallScreen({super.key});
 
-  static const String monthlyUrl =
-      'https://flutterwave.com/pay/MONTHLY_LINK_HERE';
-  static const String quarterlyUrl =
-      'https://flutterwave.com/pay/QUARTERLY_LINK_HERE';
-  static const String yearlyUrl =
-      'https://flutterwave.com/pay/YEARLY_LINK_HERE';
+  static const String monthlyUrl = 'https://flutterwave.com/pay/ejczulfxgvxf';
+  static const String quarterlyUrl = 'https://flutterwave.com/pay/z7r9rp6andzq';
+  static const String yearlyUrl = 'https://flutterwave.com/pay/ekkpn45pipap';
 
   @override
   ConsumerState<PaywallScreen> createState() => _PaywallScreenState();
@@ -74,11 +71,11 @@ extension PaywallTierX on PaywallTier {
   String get priceLine {
     switch (this) {
       case PaywallTier.monthly:
-        return r'$15/month';
+        return r'$14.99 / month';
       case PaywallTier.quarterly:
-        return r'$40/3 months (Save 11%)';
+        return r'$39.99 / 3 months';
       case PaywallTier.yearly:
-        return r'$150/year (Save 16%)';
+        return r'$144.99 / year';
     }
   }
 
@@ -86,11 +83,11 @@ extension PaywallTierX on PaywallTier {
   String get subscribeLabel {
     switch (this) {
       case PaywallTier.monthly:
-        return r'Subscribe for $15/month';
+        return r'Subscribe for $14.99 / month';
       case PaywallTier.quarterly:
-        return r'Subscribe for $40/3 months';
+        return r'Subscribe for $39.99 / 3 months';
       case PaywallTier.yearly:
-        return r'Subscribe for $150/year';
+        return r'Subscribe for $144.99 / year';
     }
   }
 }
@@ -389,7 +386,7 @@ class _Strings {
   static const String heroBody =
       'AI chart analysis, AI trade reviews and copy-trading. The Equity Guard, '
       'Kill Switch and STOP button stay free for every trader.';
-  static const String priceHint = r'From $15/month — pick a plan below';
+  static const String priceHint = r'From $14.99 / month — pick a plan below';
   static const String checkStatus = 'I Have Subscribed / Check Status';
   static const String activated = 'Subscription active — welcome to Pro!';
   static const String notYet =
