@@ -1,8 +1,54 @@
+import 'dart:async';
+import 'dart:io';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:tradeguard/core/services/auth_error_guard.dart';
 import 'package:tradeguard/core/services/auth_provider.dart';
 import 'package:tradeguard/core/services/auth_repository.dart';
 import 'package:tradeguard/core/services/services.dart';
+
+/// A fake repository whose auth stream emits a background-network error,
+/// mimicking GoTrue's auto-refresh failing while Android restricts network
+/// access (`AuthRetryableFetchException` wrapping `SocketException:
+/// Failed host lookup`).
+class _FailingRefreshRepository implements AuthRepository {
+  _FailingRefreshRepository(this._error);
+
+  final Object _error;
+  final StreamController<AppUser?> _controller =
+      StreamController<AppUser?>.broadcast();
+
+  @override
+  AppUser? get currentUser =>
+      const AppUser(id: 'live-user', email: 'trader@example.com');
+
+  @override
+  Stream<AppUser?> authStateChanges() {
+    scheduleMicrotask(() => _controller.addError(_error));
+    return _controller.stream;
+  }
+
+  @override
+  Future<AuthOutcome> signIn(String email, String password) =>
+      throw UnimplementedError();
+
+  @override
+  Future<AuthOutcome> signUp(String email, String password) =>
+      throw UnimplementedError();
+
+  @override
+  Future<void> signOut() async {}
+
+  @override
+  Future<AuthOutcome> sendPasswordReset(String email) =>
+      throw UnimplementedError();
+
+  @override
+  Future<AuthOutcome> signInWithProvider(_) => throw UnimplementedError();
+
+  Future<void> close() => _controller.close();
+}
 
 void main() {
   group('MockAuthRepository', () {
@@ -21,8 +67,7 @@ void main() {
 
     test('rejects an empty password', () async {
       final MockAuthRepository repo = MockAuthRepository();
-      final AuthOutcome outcome =
-          await repo.signIn('trader@example.com', '');
+      final AuthOutcome outcome = await repo.signIn('trader@example.com', '');
       expect(outcome.isSuccess, isFalse);
     });
 
@@ -80,7 +125,8 @@ void main() {
       expect(container.read(authProvider), isNull);
     });
 
-    test('a failed sign-in records the error and keeps the user null', () async {
+    test('a failed sign-in records the error and keeps the user null',
+        () async {
       final container = ProviderContainer();
       addTearDown(container.dispose);
       await container.read(authProvider.notifier).signOut();
@@ -94,5 +140,57 @@ void main() {
 
   test('Services resolves the mock auth repository', () {
     expect(Services.instance.auth, isA<MockAuthRepository>());
+  });
+
+  group('background auth refresh network guard', () {
+    test('recognises SocketException and the retryable wrapper', () {
+      expect(
+        isBackgroundNetworkError(
+          const SocketException('Failed host lookup: \'xyz.supabase.co\''),
+        ),
+        isTrue,
+      );
+      // gotrue wraps the socket failure in AuthRetryableFetchException whose
+      // toString() always names the wrapper; the guard matches it without a
+      // hard gotrue import so no real exception instance is needed here.
+      expect(
+        isBackgroundNetworkError(
+          'AuthRetryableFetchException(message: SocketException: '
+          'Failed host lookup: \'xyz.supabase.co\')',
+        ),
+        isTrue,
+      );
+    });
+
+    test('does not mistake a real auth failure for a network blip', () {
+      expect(
+        isBackgroundNetworkError(
+          'AuthException(message: Invalid login credentials)',
+        ),
+        isFalse,
+      );
+      expect(isBackgroundNetworkError(StateError('bad state')), isFalse);
+    });
+
+    test('AuthNotifier survives a background refresh network error', () async {
+      final repo = _FailingRefreshRepository(
+        const SocketException('Failed host lookup: \'xyz.supabase.co\''),
+      );
+      addTearDown(repo.close);
+      // runZonedGuarded proves the stream error is swallowed: without the
+      // onError handler it would escape here as an uncaught zone error.
+      Object? zoneError;
+      await runZonedGuarded(() async {
+        final AuthNotifier notifier = AuthNotifier(repo, autoSignIn: false);
+        addTearDown(notifier.dispose);
+        // Let the microtask emitting the stream error run.
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+        // The user stays signed in: no crash, no silent logout.
+        expect(notifier.state?.email, 'trader@example.com');
+      }, (Object error, StackTrace stack) {
+        zoneError = error;
+      });
+      expect(zoneError, isNull);
+    });
   });
 }

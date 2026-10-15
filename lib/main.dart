@@ -9,15 +9,18 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'core/constants/app_config.dart';
 import 'core/constants/app_strings.dart';
 import 'core/router/app_router.dart';
+import 'core/services/auth_error_guard.dart';
 import 'core/services/services.dart';
 import 'core/services/telemetry_service.dart';
 import 'core/theme/app_theme.dart';
 import 'core/widgets/fatal_config_screen.dart';
 
 Future<void> main() async {
-  WidgetsFlutterBinding.ensureInitialized();
   await runZonedGuarded<Future<void>>(
     () async {
+      // 1. THIS MUST BE THE VERY FIRST LINE INSIDE THE ZONE
+      WidgetsFlutterBinding.ensureInitialized();
+
       // A release build with no usable Supabase config stops here, before any
       // backend, telemetry or router work. It must NOT fall back to demo data:
       // a release APK is what a trader installs, and showing them seeded
@@ -64,6 +67,18 @@ Future<void> main() async {
       runApp(const ProviderScope(child: TradeGuardApp()));
     },
     (Object error, StackTrace stack) {
+      // GoTrue's background auto-refresh can also escape through paths that
+      // never touch our `onAuthStateChange` handler (e.g. `recoverSession()`
+      // rethrows after notifying, and the retryable `AuthRetryableFetchException`
+      // wrapping `SocketException: Failed host lookup` fires exactly when
+      // Android restricts network access while backgrounded). Those are
+      // transient: the SDK retries on its own when the app returns to the
+      // foreground, so swallow them here instead of filing a fatal crash —
+      // and never sign the user out over them.
+      if (isBackgroundNetworkError(error)) {
+        handleBackgroundAuthError(error, stack);
+        return;
+      }
       // Anything that escapes the zone lands here. Best-effort: if Firebase
       // never came up, recordError would itself throw and mask the original,
       // so guard it and keep the zone's default debug output.

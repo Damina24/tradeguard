@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'auth_error_guard.dart';
 import 'auth_repository.dart';
 import 'services.dart';
 import 'social_auth.dart';
@@ -39,7 +40,17 @@ class AuthNotifier extends StateNotifier<AppUser?> {
   Future<void> _bootstrap(bool autoSignIn) async {
     if (autoSignIn) return; // already signed in as the demo user
     state = _repo.currentUser;
-    _sub = _repo.authStateChanges().listen((AppUser? u) => state = u);
+    // GoTrue emits network failures (e.g. a background token refresh while
+    // Android restricts network access) as stream errors. Without `onError`
+    // Dart escalates them to unhandled zone exceptions and the VM crashes
+    // (Crashlytics `AuthRetryableFetchException` / `SocketException`). The
+    // guard swallows transient network loss — the SDK retries on its own
+    // when the app returns to the foreground — and keeps the session.
+    _sub = _repo.authStateChanges().listen(
+          (AppUser? u) => state = u,
+          onError: (Object error, StackTrace stackTrace) =>
+              handleBackgroundAuthError(error, stackTrace),
+        );
   }
 
   @override
