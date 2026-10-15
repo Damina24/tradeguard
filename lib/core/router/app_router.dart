@@ -9,6 +9,7 @@ import '../../features/chart_analysis/presentation/chart_analysis_screen.dart';
 import '../../features/guard/presentation/guard_screen.dart';
 import '../../features/journal/presentation/journal_screen.dart';
 import '../../features/patterns/presentation/pattern_insights_screen.dart';
+import '../../features/paywall/presentation/paywall_screen.dart';
 import '../../features/replay/presentation/replay_screen.dart';
 import '../../features/settings/presentation/settings_screen.dart';
 import '../../features/signals/presentation/signals_screen.dart';
@@ -16,6 +17,8 @@ import '../../features/tools/presentation/tools_screen.dart';
 import '../constants/app_strings.dart';
 import '../services/auth_provider.dart';
 import '../services/auth_repository.dart';
+import '../services/providers.dart';
+import '../services/services.dart';
 import '../theme/app_colors.dart';
 import '../widgets/splash_screen.dart';
 
@@ -27,11 +30,37 @@ class RouterRefreshNotifier extends ChangeNotifier {
 
 /// The router is a provider (not a top-level final) because the auth guard has to read
 /// [authProvider], and because a per-scope router can be disposed with the ProviderScope.
+///
+/// Hard-paywall model: the app is 100% premium. A signed-in user whose
+/// `profiles.is_premium` is false is routed to `/paywall` and stays there —
+/// every core route lives inside the shell or behind an explicit paywall
+/// redirect, so there is no bottom bar or swipe path into the app until the
+/// flag flips. Mock/demo builds bypass the gate (there is no `profiles` row
+/// to read offline).
 final Provider<GoRouter> routerProvider = Provider<GoRouter>((Ref ref) {
   final RouterRefreshNotifier refresh = RouterRefreshNotifier();
   ref.listen<AppUser?>(
     authProvider,
-    (AppUser? previous, AppUser? next) => refresh.refresh(),
+    (AppUser? previous, AppUser? next) {
+      // Refresh the premium flag on every auth change so the redirect below
+      // reads the real entitlement, not the notifier's initial `isPro: false`.
+      // Sign-out resets to non-pro so a stale `true` can never leak across
+      // accounts on a shared device.
+      if ((next != null && previous?.id != next.id) || next == null) {
+        // ignore: discarded_futures
+        ref.read(purchasesProvider.notifier).refresh();
+      }
+      refresh.refresh();
+    },
+  );
+  ref.listen<PurchaseState>(
+    purchasesProvider,
+    (PurchaseState? previous, PurchaseState next) {
+      if (previous?.isPro != next.isPro ||
+          previous?.isLoading != next.isLoading) {
+        refresh.refresh();
+      }
+    },
   );
 
   final GoRouter router = GoRouter(
@@ -41,11 +70,21 @@ final Provider<GoRouter> routerProvider = Provider<GoRouter>((Ref ref) {
       final AppUser? user = ref.read(authProvider);
       final bool atAuth = state.matchedLocation == '/auth';
       final bool atSplash = state.matchedLocation == '/splash';
+      final bool atPaywall = state.matchedLocation == '/paywall';
       // The splash owns its own timed handoff (`SplashScreen.dwell`);
       // never redirect away from it, or it would never be visible.
       if (atSplash) return null;
       if (user == null) return atAuth ? null : '/auth';
-      return atAuth ? '/guard' : null;
+      // Demo/mock builds have no `profiles` row — the whole app stays open.
+      if (Services.instance.isMock) return atAuth ? '/guard' : null;
+      final PurchaseState purchases = ref.read(purchasesProvider);
+      // While the flag is (re)reading, hold on the paywall rather than
+      // flashing the dashboard to a non-pro user (or bouncing a pro user
+      // through the paywall on a slow network).
+      if (purchases.isLoading) return atPaywall ? null : '/paywall';
+      if (!purchases.isPro) return atPaywall ? null : '/paywall';
+      if (atAuth || atPaywall) return '/guard';
+      return null;
     },
     routes: <RouteBase>[
       GoRoute(
@@ -129,9 +168,15 @@ final Provider<GoRouter> routerProvider = Provider<GoRouter>((Ref ref) {
           ),
         ],
       ),
-      // Full-screen monetisation surfaces, deliberately OUTSIDE the shell so
-      // neither shows the bottom navigation bar — the WebView especially should
-      // feel like a dedicated browser, not a tab. Reached from Settings.
+      // Full-screen surfaces, deliberately OUTSIDE the shell so none shows
+      // the bottom navigation bar. `/paywall` is the hard-paywall gate: a
+      // non-pro user lives here with no tab bar and no swipe path into the
+      // app. The WebView especially should feel like a dedicated browser,
+      // not a tab. Reached from Settings.
+      GoRoute(
+        path: '/paywall',
+        builder: (_, __) => const PaywallScreen(),
+      ),
       GoRoute(
         path: '/broker-offers',
         builder: (_, __) => const BrokerOffersScreen(),

@@ -34,7 +34,7 @@ class SettingsScreen extends ConsumerWidget {
           SettingsTiles.profile(
             email: user?.email,
             isPro: isPro,
-            onUpgrade: () => Navigator.of(context).push(
+            onSubscribe: () => Navigator.of(context).push(
               MaterialPageRoute<void>(builder: (_) => const PaywallScreen()),
             ),
           ),

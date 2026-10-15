@@ -10,7 +10,7 @@ class SettingsTiles {
   SettingsTiles._();
 
   static Widget profile({
-    required VoidCallback onUpgrade,
+    required VoidCallback onSubscribe,
     String? email,
     bool isPro = false,
   }) =>
@@ -38,14 +38,18 @@ class SettingsTiles {
                   ),
                   Text(
                     AppConfig.useMock
-                        ? 'Free plan • demo mode'
-                        : (isPro ? 'Pro plan' : 'Free plan'),
+                        ? 'Demo access • mock mode'
+                        : (isPro ? 'TradeGuard Pro' : 'TradeGuard Pro — inactive'),
                     style: AppTextStyles.muted,
                   ),
                 ],
               ),
             ),
-            TextButton(onPressed: onUpgrade, child: const Text('Upgrade')),
+            if (!isPro)
+              TextButton(
+                onPressed: onSubscribe,
+                child: const Text('Subscribe'),
+              ),
           ],
         ),
       );

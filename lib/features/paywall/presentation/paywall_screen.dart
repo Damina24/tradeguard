@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../../core/constants/app_strings.dart';
@@ -16,8 +17,9 @@ import '../../../core/theme/app_text_styles.dart';
 /// calls the `flutterwave-webhook` Edge Function, which flips
 /// `profiles.is_premium` to true. The trader returns, taps
 /// **I Have Subscribed / Check Status**, and this screen re-reads that flag:
-/// on success it shows a confirmation, closes the paywall and the rest of the
-/// app unlocks (every Pro gate reads [purchasesProvider].isPro).
+/// on success the router (`app_router.dart`) sees `isPro == true` and sends
+/// the trader to the Dashboard. The hard-paywall gate owns access — this
+/// screen owns messaging and the refresh action.
 ///
 /// Three states, read from [purchasesProvider]:
 ///   * **loading** — a spinner while the flag is (re)read;
@@ -26,8 +28,8 @@ import '../../../core/theme/app_text_styles.dart';
 ///                   the verbatim risk disclaimer (a paywall is a compliance
 ///                   surface).
 ///
-/// The Equity Guard, Kill Switch and STOP button are deliberately NOT part of
-/// this paywall — they are safety features and stay free for every trader.
+/// TradeGuard is subscription-only: there is no free tier. Every core feature
+/// (Dashboard/Guard, Journal, Tools, Signals, AI) sits behind this gate.
 class PaywallScreen extends ConsumerStatefulWidget {
   const PaywallScreen({super.key});
 
@@ -163,9 +165,11 @@ class _PaywallScreenState extends ConsumerState<PaywallScreen> {
     }
   }
 
-  /// Re-reads `profiles.is_premium`. On success it shows a confirmation and
-  /// pops the paywall so the app is already unlocked underneath; otherwise it
-  /// tells the trader the payment has not been seen yet. Never a raw error.
+  /// Re-reads `profiles.is_premium`. On success the router's hard-paywall
+  /// redirect sends the trader to the Dashboard on its own; this also pops
+  /// when the paywall was pushed as a one-off route (e.g. from Settings).
+  /// Otherwise it tells the trader the payment has not been seen yet. Never
+  /// a raw error.
   Future<void> _checkStatus() async {
     setState(() => _checking = true);
     try {
@@ -178,11 +182,10 @@ class _PaywallScreenState extends ConsumerState<PaywallScreen> {
     final bool isPro = ref.read(purchasesProvider).isPro;
     if (isPro) {
       _snack(_Strings.activated);
-      // Close the paywall: presented as a pushed route (Settings) or a modal
-      // sheet (Signals / AI Review / Copy). `maybeOf` + `canPop` covers both
-      // and is a no-op when there is nothing to pop.
-      final NavigatorState? nav = Navigator.maybeOf(context);
-      if (nav != null && nav.canPop()) nav.pop();
+      // Hard-paywall mode: the paywall is a full route (`/paywall`), so the
+      // router redirect already moved the trader to `/guard`. When the
+      // paywall was pushed on top (Settings → Subscribe), pop back instead.
+      if (context.canPop()) context.pop();
     } else {
       _snack(_Strings.notYet);
     }
@@ -382,10 +385,10 @@ class _Strings {
   _Strings._();
 
   static const String title = 'TradeGuard Pro';
-  static const String heroTitle = 'Unlock every premium tool';
+  static const String heroTitle = 'Subscribe to Unlock TradeGuard Pro';
   static const String heroBody =
-      'AI chart analysis, AI trade reviews and copy-trading. The Equity Guard, '
-      'Kill Switch and STOP button stay free for every trader.';
+      'TradeGuard is subscription-only. One subscription unlocks the dashboard, '
+      'Guard, journal, tools, signals, copy-trading and AI features.';
   static const String priceHint = r'From $14.99 / month — pick a plan below';
   static const String checkStatus = 'I Have Subscribed / Check Status';
   static const String activated = 'Subscription active — welcome to Pro!';
