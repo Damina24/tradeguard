@@ -19,12 +19,16 @@ class PurchaseFailure implements Exception {
 
 /// Abstraction over the premium ("Pro") status check.
 ///
-/// Premium is a single boolean on the user's `profiles` row (`is_premium`),
-/// flipped to true by the `flutterwave-webhook` Edge Function after a Flutterwave
-/// `charge.completed` (or `subscription.created`). There is no store SDK and no subscription table: the app
-/// opens a Flutterwave Payment Link in the browser, then re-reads this flag.
+/// Premium is `is_premium` on the user's `profiles` row PLUS a non-expired
+/// `premium_expires_at` (migration 0013): `is_premium == true AND
+/// (premium_expires_at IS NULL OR premium_expires_at > NOW())`. A NULL expiry
+/// is a legacy/lifetime grant predating 0013; the `flutterwave-webhook` Edge
+/// Function always writes a concrete expiry for new grants, so the "one monthly
+/// payment unlocks Pro forever" loophole is closed. There is no store SDK and
+/// no subscription table: the app opens a Flutterwave Payment Link in the
+/// browser, then re-reads this entitlement.
 abstract class PurchaseRepository {
-  /// The trader's current premium status, read from `profiles.is_premium`.
+  /// The trader's current premium status: the flag AND the expiry.
   Future<bool> isPro();
 
   /// A stream of the current premium status. Emits the present value once; the
@@ -33,10 +37,11 @@ abstract class PurchaseRepository {
   Stream<bool> watchProStatus();
 }
 
-/// Live Supabase implementation: reads `profiles.is_premium` for the signed-in
-/// trader. RLS (migration 0012) allows a user to SELECT only their own row, so
-/// the read is inherently own-row scoped; the explicit `id` filter simply makes
-/// that intent local and mirrors the other own-row repositories.
+/// Live Supabase implementation: reads `profiles.is_premium` +
+/// `profiles.premium_expires_at` for the signed-in trader. RLS (migration
+/// 0012) allows a user to SELECT only their own row, so the read is inherently
+/// own-row scoped; the explicit `id` filter simply makes that intent local and
+/// mirrors the other own-row repositories.
 class SupabasePurchaseRepository implements PurchaseRepository {
   SupabasePurchaseRepository([SupabaseService? service])
       : _service = service ?? SupabaseService.instance;
@@ -44,6 +49,14 @@ class SupabasePurchaseRepository implements PurchaseRepository {
   final SupabaseService _service;
 
   SupabaseClient get _client => _service.client;
+
+  /// Pure entitlement rule (mirrors the SQL in migration 0013's comment), kept
+  /// static so it is unit-testable without a Supabase project.
+  static bool isEntitled({required bool flag, DateTime? expiresAt, DateTime? now}) {
+    if (!flag) return false;
+    if (expiresAt == null) return true; // legacy/lifetime grant
+    return expiresAt.isAfter(now ?? DateTime.now().toUtc());
+  }
 
   @override
   Future<bool> isPro() async {
@@ -53,12 +66,19 @@ class SupabasePurchaseRepository implements PurchaseRepository {
     try {
       final List<Map<String, dynamic>> rows = await (_client
           .from('profiles')
-          .select('is_premium')
+          .select('is_premium, premium_expires_at')
           .eq('id', userId)
           .limit(1))
           .timeout(SupabaseService.networkTimeout);
       if (rows.isEmpty) return false;
-      return rows.first['is_premium'] == true;
+      final Map<String, dynamic> row = rows.first;
+      final bool flag = row['is_premium'] == true;
+      DateTime? expiresAt;
+      final Object? raw = row['premium_expires_at'];
+      if (raw is String && raw.isNotEmpty) {
+        expiresAt = DateTime.tryParse(raw)?.toUtc();
+      }
+      return isEntitled(flag: flag, expiresAt: expiresAt);
     } catch (_) {
       // A network/backend failure must never read as "premium"; treat it as not
       // Pro and let the notifier surface a retry, never a raw error string.
@@ -73,22 +93,37 @@ class SupabasePurchaseRepository implements PurchaseRepository {
 
 /// In-memory purchase repository used by mock mode and tests.
 ///
-/// Defaults to "not pro" and exposes a test hook ([setProStatus]) to flip the
-/// pro status. [isPro] and [watchProStatus] both reflect the current value.
+/// Defaults to "not pro" and exposes test hooks ([setProStatus] / [setExpiry])
+/// to flip the entitlement. [isPro] honours the same rule as
+/// [SupabasePurchaseRepository.isEntitled]: the flag AND a non-expired
+/// `premium_expires_at` (NULL = lifetime).
 class MockPurchaseRepository implements PurchaseRepository {
   MockPurchaseRepository([bool isPro = false]) : _isPro = isPro;
 
   bool _isPro;
+  DateTime? _expiresAt;
   final _controller = StreamController<bool>.broadcast();
 
   /// Test hook: flip the pro status that [watchProStatus] emits.
   void setProStatus(bool value) {
     _isPro = value;
-    _controller.add(value);
+    _controller.add(isProSync);
   }
 
+  /// Test hook: set the expiry honoured by [isProSync]/[isPro].
+  void setExpiry(DateTime? value) {
+    _expiresAt = value?.toUtc();
+    _controller.add(isProSync);
+  }
+
+  /// Synchronous form of the entitlement rule (used by the stream above).
+  bool get isProSync => SupabasePurchaseRepository.isEntitled(
+        flag: _isPro,
+        expiresAt: _expiresAt,
+      );
+
   @override
-  Future<bool> isPro() async => _isPro;
+  Future<bool> isPro() async => isProSync;
 
   @override
   Stream<bool> watchProStatus() {

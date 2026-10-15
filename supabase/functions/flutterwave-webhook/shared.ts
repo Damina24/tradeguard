@@ -1,5 +1,6 @@
 // Pure logic for the `flutterwave-webhook` Edge Function: signature verification,
-// event filtering, customer-email extraction and email masking.
+// event filtering, customer-email extraction, tier/amount inference, expiry
+// computation and email masking.
 //
 // Split out of `index.ts` for the same reason as `copy-signal/shared.ts` — this
 // module touches neither `Deno.env` nor the network, so `flutterwave_webhook_test.ts`
@@ -17,12 +18,25 @@
 //   * **Only `charge.completed` / `subscription.created` grant premium.** Every
 //     other event is acknowledged with 200 so Flutterwave stops retrying it,
 //     but changes nothing.
+//   * **Grant is time-boxed, never lifetime.** The tier is inferred from
+//     `data.amount` (migration 0013): ~$15 → 1 month, ~$40 → 3 months,
+//     ~$145 → 12 months. An unrecognised amount defaults to 1 month — the
+//     webhook NEVER writes a NULL `premium_expires_at` (NULL is reserved for
+//     legacy/lifetime grants made before 0013).
 //   * **Emails and secrets are never logged.** `maskEmail` keeps at most the
 //     first character of the local part and domain; the raw address, the request
 //     body and the signature header are never written to a log.
 
 export const FLUTTERWAVE_EVENT_CHARGE_COMPLETED = 'charge.completed';
 export const FLUTTERWAVE_EVENT_SUBSCRIPTION_CREATED = 'subscription.created';
+
+/** Paywall tiers and their canonical USD prices (see `paywall_screen.dart`). */
+export const TIER_MONTHLY_MONTHS = 1;
+export const TIER_QUARTERLY_MONTHS = 3;
+export const TIER_YEARLY_MONTHS = 12;
+export const TIER_MONTHLY_AMOUNT = 14.99;
+export const TIER_QUARTERLY_AMOUNT = 39.99;
+export const TIER_YEARLY_AMOUNT = 144.99;
 
 /** True when the payload's `event` grants premium (`charge.completed`). */
 export function isChargeSuccess(payload: unknown): boolean {
@@ -63,6 +77,54 @@ export function extractCustomerEmail(payload: unknown): string | null {
     }
   }
   return null;
+}
+
+/**
+ * The charged amount in major currency units from a Flutterwave payload.
+ *
+ * Reads `data.amount` (falling back to `data.charged_amount`), coercing
+ * numeric strings. Flutterwave sends NGN-style minor units on some rails, so a
+ * value ≥ 1000 that is an exact multiple matching a tier price × 100 is
+ * normalised (e.g. 1499 kobo → 14.99). Returns null when no usable amount is
+ * present — the caller then falls back to the 1-month default rather than
+ * writing a lifetime grant.
+ */
+export function extractChargeAmount(payload: unknown): number | null {
+  if (typeof payload !== 'object' || payload === null) return null;
+  const root = payload as Record<string, unknown>;
+  const data = root.data;
+  if (typeof data !== 'object' || data === null) return null;
+  const d = data as Record<string, unknown>;
+  const raw = d.amount ?? d.charged_amount;
+  const num = typeof raw === 'number' ? raw : typeof raw === 'string' && raw.trim() !== '' ? Number(raw) : NaN;
+  if (!Number.isFinite(num) || num <= 0) return null;
+  // Minor-unit normalisation: 1499 → 14.99, 3999 → 39.99, 14499 → 144.99.
+  const tiers = [TIER_MONTHLY_AMOUNT, TIER_QUARTERLY_AMOUNT, TIER_YEARLY_AMOUNT];
+  for (const tier of tiers) {
+    if (Math.abs(num - tier * 100) < 0.5) return tier;
+  }
+  return num;
+}
+
+/**
+ * Subscription length in months inferred from the charged amount.
+ *
+ * ±$0.50 tolerance around each tier price absorbs FX rounding and gateway
+ * fees: ~$15 → 1 month, ~$40 → 3 months, ~$145 → 12 months. Anything else
+ * defaults to 1 month (fail-closed: under-grant, never over-grant).
+ */
+export function inferTierMonths(amount: number | null): number {
+  if (amount === null || !Number.isFinite(amount)) return TIER_MONTHLY_MONTHS;
+  if (Math.abs(amount - TIER_YEARLY_AMOUNT) <= 0.5) return TIER_YEARLY_MONTHS;
+  if (Math.abs(amount - TIER_QUARTERLY_AMOUNT) <= 0.5) return TIER_QUARTERLY_MONTHS;
+  return TIER_MONTHLY_MONTHS;
+}
+
+/** `premium_expires_at` for a grant starting at `from` lasting `months`. */
+export function premiumExpiresAt(from: Date, months: number): string {
+  const d = new Date(from.getTime());
+  d.setUTCMonth(d.getUTCMonth() + months);
+  return d.toISOString();
 }
 
 /**

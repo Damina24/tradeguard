@@ -339,14 +339,14 @@ Behaviours worth checking explicitly, because each is deliberate:
 
 ---
 
-## 3c. The `delete-account` function (store compliance)
+## 3c. The `delete-account` function (account-deletion compliance)
 
 ```bash
 supabase functions deploy delete-account
 ```
 
-`delete-account` powers the in-app **Delete Account** action both stores require (Apple
-**5.1.1(v)**, Google Play account-deletion). It is **user-facing**, so it uses the same
+`delete-account` powers the in-app **Delete Account** action (the public
+deletion page is `docs/ACCOUNT_DELETION.md`). It is **user-facing**, so it uses the same
 `ai-review` gate as `copy-signal` — `verify_jwt = true` (`supabase/config.toml`) plus a GoTrue
 lookup of the caller's **own** bearer token. The uid comes only from that verified JWT; there is
 no request body and no id is ever read from a header other than the token. It needs
@@ -395,9 +395,74 @@ working. To verify end to end, sign in as a trader with data, run the call once 
 screenshots gone, user removed), then run it again — the second call returns the same success
 shape with all counts `0`.
 
-> Deleting the account does **not** cancel an active subscription. The dialog says so and points
-> the trader to the App Store / Google Play subscription settings; cancellation is manual and out
-> of band. See also `docs/ACCOUNT_DELETION.md` (the public data-deletion page the stores link to).
+> Deleting the account does **not** cancel an active Flutterwave subscription. The
+> dialog says so and points the trader at their Flutterwave receipt / customer
+> portal; cancellation is manual and out of band. See also
+> `docs/ACCOUNT_DELETION.md` (the public data-deletion page).
+
+---
+
+## 3d. Premium + expiry (Flutterwave billing, GitHub APK distribution)
+
+TradeGuard is subscription-only and distributed as a **GitHub APK sideload** —
+there is no Play Store listing, no RevenueCat, no closed testing, and no store
+SDK in the app. Billing is **Flutterwave Payment Links** (USD tiers on the
+paywall: `$14.99` monthly, `$39.99` quarterly, `$144.99` yearly), and entitlement
+is `profiles.is_premium` **plus** `profiles.premium_expires_at` (migration
+`0013_premium_expiry.sql`):
+
+```sql
+-- who is currently premium?
+select id, email, is_premium, premium_expires_at from profiles
+ where is_premium = true
+   and (premium_expires_at is null or premium_expires_at > now());
+```
+
+* `is_premium = true` with **NULL** `premium_expires_at` is a legacy/lifetime
+  grant (pre-0013). The webhook below never writes NULL.
+* The app's check is `is_premium == true AND (premium_expires_at IS NULL OR
+  premium_expires_at > NOW())` (`SupabasePurchaseRepository.isPro`), so an
+  expired monthly payment stops unlocking Pro — the "lifetime access" loophole
+  is closed. RLS is unchanged (read-only own-row policy from 0012); the
+  service-role webhook is the only writer.
+
+```bash
+supabase functions deploy flutterwave-webhook
+```
+
+`flutterwave-webhook` is called by **Flutterwave's servers, not the app**, so
+`verify_jwt = false` (`supabase/config.toml`) — authenticity is the `verif-hash`
+header verified against `FLUTTERWAVE_SECRET_KEY` **before** the body is parsed.
+It needs `FLUTTERWAVE_SECRET_KEY` + `SUPABASE_URL` / `SUPABASE_SERVICE_KEY`
+(platform-provided); all live in `supabase secrets`, never in `env/*.json`:
+
+```bash
+supabase secrets set FLUTTERWAVE_SECRET_KEY=<flutterwave-secret-hash>
+```
+
+On a verified `charge.completed` (or `subscription.created`) it infers the tier
+from `data.amount` (`~$15 → 1 month`, `~$40 → 3 months`, `~$145 → 12 months`,
+anything else → 1 month fail-closed) and sets **both**
+`is_premium: true` **and** `premium_expires_at`. Amounts tolerate ±$0.50 FX
+rounding plus string/minor-unit shapes. The pure logic is unit-tested without a
+runtime — this is the suite CI runs:
+
+```bash
+node supabase/functions/flutterwave-webhook/flutterwave_webhook_test.ts
+# → flutterwave-webhook: 14 tests passed
+```
+
+Verify end to end:
+
+1. Create the three Flutterwave Payment Links and paste their URLs into
+   `PaywallScreen.monthlyUrl/quarterlyUrl/yearlyUrl`.
+2. In the Flutterwave dashboard set the webhook URL to
+   `https://<project-ref>.supabase.co/functions/v1/flutterwave-webhook` with
+   the secret hash stored above.
+3. Pay with a test card, then confirm the row: `is_premium = true` and
+   `premium_expires_at ≈ now() + tier months`.
+4. In the app, tap **I Have Subscribed / Check Status** — the router sees
+   `isPro == true` and leaves `/paywall` for the Dashboard.
 
 ---
 
@@ -459,12 +524,38 @@ numbers.
 
 ---
 
-## 7. Release build commands (the only supported ones)
+## 7. Release: GitHub APK sideload (the only supported path)
 
-> **Read this before shipping.** Every value below is baked into the binary at compile time, so a
-> missing `--dart-define` is not something a user can fix after installing. Get the names exactly
-> right — these are the names the code actually reads (see `lib/core/constants/app_config.dart` and
-> `lib/features/paywall/data/revenuecat_config.dart`).
+> **Read this before shipping.** TradeGuard ships as a **GitHub APK sideload** —
+> there is no Play Store listing, no RevenueCat, no closed testing, and no
+> Codemagic IPA. Billing is Flutterwave Payment Links (§3d). Every value below
+> is baked into the binary at compile time, so a missing `--dart-define` is not
+> something a user can fix after installing. Get the names exactly right —
+> these are the names the code actually reads (see
+> `lib/core/constants/app_config.dart`).
+>
+> CI (`.github/workflows/ci.yml`) builds the APK from **GitHub Secrets**, never
+> from a committed env file (`env/*.json` is git-ignored and
+> `env/*.local.json` is explicitly ignored too). Set these under
+> **Settings → Secrets and variables → Actions**:
+>
+> | Secret | Value |
+> |---|---|
+> | `SUPABASE_URL` | `https://<project-ref>.supabase.co` |
+> | `SUPABASE_ANON_KEY` | anon public key (Settings → API) |
+>
+> The workflow runs `flutter analyze` + `flutter test` + all three Node suites
+> (`copy_signal_test.ts`, `delete_account_test.ts`,
+> `flutterwave_webhook_test.ts`), then:
+>
+> ```yaml
+> flutter build apk --release
+>   --dart-define=SUPABASE_URL=${{ secrets.SUPABASE_URL }}
+>   --dart-define=SUPABASE_ANON_KEY=${{ secrets.SUPABASE_ANON_KEY }}
+> ```
+>
+> and uploads `build/app/outputs/flutter-apk/app-release.apk`. Attach that APK
+> to a GitHub Release — that Release is the distribution channel.
 
 ### Required defines
 
@@ -472,8 +563,6 @@ numbers.
 |---|---|---|
 | `SUPABASE_URL` | **yes** | `AppConfig.supabaseUrl` |
 | `SUPABASE_ANON_KEY` | **yes** | `AppConfig.supabaseAnonKey` |
-| `REVENUECAT_GOOGLE_KEY` | **yes for Android** | `RevenueCatConfig.googleKey` |
-| `REVENUECAT_APPLE_KEY` | **yes for iOS** | `RevenueCatConfig.appleKey` |
 | `METAAPI_TOKEN` | live copy-trading only | `AppConfig.metaApiToken` |
 | `OPENAI_API_KEY` | AI features only | `AppConfig.openAiKey` |
 | `GOOGLE_SERVER_CLIENT_ID` | Google sign-in on Android | `AppConfig.googleServerClientId` |
@@ -481,42 +570,25 @@ numbers.
 | `APPLE_WEB_CLIENT_ID` | Apple sign-in on Android | `AppConfig.appleWebClientId` |
 | `TWELVEDATA_KEY` | **never** — server-side only | deliberately unread |
 
-⚠️ `REVENUECAT_IOS_KEY` and `REVENUECAT_ANDROID_KEY` in `env/*.json` are **dead keys** — nothing
-reads them. The paywall reads `REVENUECAT_APPLE_KEY` and `REVENUECAT_GOOGLE_KEY`. Passing only the
-dead pair produces a build whose paywall silently has no offerings.
+Billing needs **no** client-side key: the paywall opens Flutterwave Payment
+Links in the browser and the `flutterwave-webhook` Edge Function (§3d) grants
+time-boxed premium server-side with `FLUTTERWAVE_SECRET_KEY` from
+`supabase secrets`.
 
 ⚠️ `TWELVEDATA_KEY` must stay out of every build: anything passed via `--dart-define` ships inside
-the APK/AAB. It belongs in `supabase secrets` (§3) and is read only by the `market-bars` function.
+the APK. It belongs in `supabase secrets` (§3) and is read only by the `market-bars` function.
 
-### Release APK (Android)
+### Release APK (Android — GitHub sideload)
 
 ```powershell
 flutter build apk --release `
   --dart-define=SUPABASE_URL=https://<project-ref>.supabase.co `
-  --dart-define=SUPABASE_ANON_KEY=<anon public key> `
-  --dart-define=REVENUECAT_GOOGLE_KEY=goog_<android key>
+  --dart-define=SUPABASE_ANON_KEY=<anon public key>
 ```
 
-### Release appbundle (Android — what Play Console wants)
-
-```powershell
-flutter build appbundle --release `
-  --dart-define=SUPABASE_URL=https://<project-ref>.supabase.co `
-  --dart-define=SUPABASE_ANON_KEY=<anon public key> `
-  --dart-define=REVENUECAT_GOOGLE_KEY=goog_<android key>
-```
-
-### Release IPA (iOS — via Codemagic)
-
-```bash
-flutter build ipa --release \
-  --dart-define=SUPABASE_URL=https://<project-ref>.supabase.co \
-  --dart-define=SUPABASE_ANON_KEY=<anon public key> \
-  --dart-define=REVENUECAT_APPLE_KEY=appl_<ios key>
-```
-
-A cross-platform release build may carry both store keys; each platform reads only its own, so the
-extra one is inert.
+Publish the resulting `build/app/outputs/flutter-apk/app-release.apk` as a
+GitHub Release asset with the matching tag/notes. Traders sideload that APK
+directly — there is no store review, staged rollout, or tester track.
 
 ### Optional extras for a full release build
 
@@ -540,7 +612,7 @@ flutter build apk --release --dart-define=USE_MOCK=true
 
 `USE_MOCK` is an explicit opt-in that wins in every build flavour. Demo mode auto-signs-in a demo
 user, so the app opens straight to Guard with the seeded EVAL/FUNDED accounts — never hand this
-build to a real trader, and never ship it to a store listing.
+build to a real trader, and never attach it to a GitHub Release.
 
 ### What a release build does with no defines at all
 
@@ -565,7 +637,7 @@ which is what makes `flutter run` work with no keys.
 |---|---|
 | Release APK shows "App configuration missing" | `SUPABASE_URL` / `SUPABASE_ANON_KEY` missing from the build command. Rebuild per §7. Not fixable on the device — the keys are compile-time. |
 | Release APK opens on demo accounts with no sign-in screen | Built without the required defines *before* this guard existed, or built with `USE_MOCK=true`. Rebuild per §7 without `USE_MOCK`. |
-| Paywall shows "No subscription options" on a release build | `REVENUECAT_GOOGLE_KEY` / `REVENUECAT_APPLE_KEY` missing, or the offering is not configured in RevenueCat. Check you used the live names, not the dead `REVENUECAT_ANDROID_KEY` / `REVENUECAT_IOS_KEY`. |
+| Paywall never unlocks after a Flutterwave payment | Webhook not configured (§3d): check `FLUTTERWAVE_SECRET_KEY` in `supabase secrets`, the dashboard webhook URL, and that `profiles.premium_expires_at` was set to a future timestamp. In-app, tap **I Have Subscribed / Check Status** to re-read. |
 | Settings → Sign out appears to do nothing | Fixed: it used to only show a SnackBar. It now clears the session and routes to `/auth`. |
 | `{"ok":false,"error":"Unauthorized"}` from `guard-check` | Bearer missing, or not the `service_role` key. With `verify_jwt = true` the platform rejects an anon key here too. |
 | `cron.job` empty after `db push` | pg_cron unavailable on the plan, or the migration failed — read the `supabase db push` output. |

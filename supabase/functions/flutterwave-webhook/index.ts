@@ -1,14 +1,20 @@
-// flutterwave-webhook — flips `profiles.is_premium` to true on a Flutterwave
+// flutterwave-webhook — grants time-boxed `profiles.is_premium` on a Flutterwave
 // charge.completed (or subscription.created).
 //
 //   POST /functions/v1/flutterwave-webhook  (called by Flutterwave, not the app)
 //     body: the Flutterwave event JSON
 //     header: verif-hash  (the secret hash configured in the Flutterwave dashboard)
-//     -> 200 { ok: true }  on a verified charge.completed whose email matched a profile
+//     -> 200 { ok: true, … }  on a verified charge.completed whose email matched a profile
 //     -> 200 { ok: true, ignored: true } on any other event (ack so Flutterwave stops retrying)
 //     -> 401 on a bad/missing signature, 405 on non-POST, 400 on a success with no email,
 //        503 when FLUTTERWAVE_SECRET_KEY or the Supabase service config is missing, 500 on a
 //        failed update.
+//
+// The grant is TIME-BOXED (migration 0013): the tier is inferred from
+// `data.amount` (~$15 → 1 month, ~$40 → 3 months, ~$145 → 12 months,
+// default 1 month) and the update sets BOTH `is_premium = true` AND
+// `premium_expires_at`. The webhook never writes a NULL expiry — NULL is
+// reserved for legacy/lifetime grants predating 0013.
 //
 // ── Authorization ───────────────────────────────────────────────────────────────
 // This endpoint is called by Flutterwave's servers, NOT by the app, so it carries no Supabase
@@ -20,8 +26,9 @@
 //   FLUTTERWAVE_SECRET_KEY     required — verifies the webhook signature. Lives only in
 //                              `supabase secrets`, never in the app or any env/*.json.
 //   SUPABASE_URL / SUPABASE_SERVICE_KEY  required — platform-provided. The service role is
-//                              used to UPDATE `profiles.is_premium` (RLS is read-only for
-//                              users, migration 0012), matched by the customer's email.
+//                              used to UPDATE `profiles.is_premium` +
+//                              `premium_expires_at` (RLS is read-only for
+//                              users, migrations 0012/0013), matched by email.
 //
 // ── Logging ──────────────────────────────────────────────────────────────────────
 // Logs COUNTS and MASKED emails only (see `maskEmail` in ./shared.ts) — never the raw
@@ -31,9 +38,12 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
 import {
+  extractChargeAmount,
   extractCustomerEmail,
+  inferTierMonths,
   isChargeSuccess,
   maskEmail,
+  premiumExpiresAt,
   verifyWebhook,
 } from './shared.ts';
 
@@ -109,9 +119,16 @@ Deno.serve(async (req: Request): Promise<Response> => {
     // is the only path that can set is_premium. Case-insensitive email match: Flutterwave
     // preserves whatever casing the trader typed at checkout, and profiles.email may be
     // stored differently.
+    //
+    // Time-boxed grant (migration 0013): the tier comes from `data.amount`
+    // (~$15 → 1 month, ~$40 → 3 months, ~$145 → 12 months, unknown → 1 month)
+    // and BOTH columns are written. `premium_expires_at` is always non-NULL
+    // here — NULL remains the legacy/lifetime marker for pre-0013 grants.
+    const months = inferTierMonths(extractChargeAmount(payload));
+    const premiumExpiresAtIso = premiumExpiresAt(new Date(), months);
     const { error } = await sb
       .from('profiles')
-      .update({ is_premium: true })
+      .update({ is_premium: true, premium_expires_at: premiumExpiresAtIso })
       .ilike('email', email)
       .select('id');
 
@@ -121,9 +138,9 @@ Deno.serve(async (req: Request): Promise<Response> => {
       return json({ ok: false, error: 'server' }, 500);
     }
 
-    // Masked email + a success flag only.
-    console.log('flutterwave-webhook: premium granted to', maskEmail(email));
-    return json({ ok: true }, 200);
+    // Masked email + tier shape only — never the raw address or amount.
+    console.log('flutterwave-webhook: premium granted to', maskEmail(email), `${months}m`);
+    return json({ ok: true, months }, 200);
   } catch (err) {
     console.error('flutterwave-webhook: failed', String(err));
     return json({ ok: false, error: 'server' }, 500);

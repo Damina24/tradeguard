@@ -4,13 +4,60 @@ import 'package:tradeguard/core/services/providers.dart';
 import 'package:tradeguard/core/services/services.dart';
 import 'package:tradeguard/features/paywall/data/purchase_repository.dart';
 
-/// Premium is a single boolean on `profiles.is_premium`, read through
-/// [PurchaseRepository]. These tests pin the in-memory repository and the
-/// provider wiring (the Supabase read itself needs a live project and is
-/// covered by the Edge Function + migration). The live Supabase repository is
-/// only constructed when a backend is configured, so in this test environment
-/// the default is the mock.
+/// Premium is `profiles.is_premium` PLUS a non-expired `premium_expires_at`
+/// (migration 0013), read through [PurchaseRepository]. These tests pin the
+/// in-memory repository, the pure entitlement rule and the provider wiring (the
+/// Supabase read itself needs a live project and is covered by the Edge
+/// Function + migration). The live Supabase repository is only constructed when
+/// a backend is configured, so in this test environment the default is the mock.
 void main() {
+  group('expiry entitlement rule (SupabasePurchaseRepository.isEntitled)', () {
+    final DateTime now = DateTime.utc(2026, 6, 15);
+
+    test('flag off is never pro, even with a future expiry', () {
+      expect(
+        SupabasePurchaseRepository.isEntitled(
+          flag: false,
+          expiresAt: now.add(const Duration(days: 30)),
+          now: now,
+        ),
+        isFalse,
+      );
+    });
+
+    test('flag on with NULL expiry is a legacy lifetime grant', () {
+      expect(
+        SupabasePurchaseRepository.isEntitled(
+          flag: true,
+          now: now,
+        ),
+        isTrue,
+      );
+    });
+
+    test('flag on with a future expiry is pro', () {
+      expect(
+        SupabasePurchaseRepository.isEntitled(
+          flag: true,
+          expiresAt: now.add(const Duration(days: 1)),
+          now: now,
+        ),
+        isTrue,
+      );
+    });
+
+    test('flag on with a past expiry is NOT pro (loophole closed)', () {
+      expect(
+        SupabasePurchaseRepository.isEntitled(
+          flag: true,
+          expiresAt: now.subtract(const Duration(seconds: 1)),
+          now: now,
+        ),
+        isFalse,
+      );
+    });
+  });
+
   group('MockPurchaseRepository', () {
     test('defaults to not-premium', () async {
       final repo = MockPurchaseRepository();
@@ -32,6 +79,20 @@ void main() {
 
       repo.setProStatus(true);
       expect(await repo.watchProStatus().first, isTrue);
+    });
+
+    test('an expired grant reads as not-pro (loophole closed)', () async {
+      final repo = MockPurchaseRepository();
+      repo.setProStatus(true);
+      repo.setExpiry(DateTime.now().toUtc().subtract(const Duration(days: 1)));
+      expect(await repo.isPro(), isFalse);
+    });
+
+    test('a future expiry keeps the grant pro', () async {
+      final repo = MockPurchaseRepository();
+      repo.setProStatus(true);
+      repo.setExpiry(DateTime.now().toUtc().add(const Duration(days: 30)));
+      expect(await repo.isPro(), isTrue);
     });
   });
 

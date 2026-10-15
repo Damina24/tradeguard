@@ -1,9 +1,9 @@
--- Paystack premium toggle (0012).
+-- Flutterwave premium toggle (0012).
 --
 -- The whole "is this trader premium?" state is a single boolean on `profiles`.
--- There is no subscription table and no store SDK: the app opens a Paystack
--- Payment Page in the browser, Paystack calls the `paystack-webhook` Edge
--- Function on `charge.success`, and that function (service role) flips this
+-- There is no subscription table and no store SDK: the app opens a Flutterwave
+-- Payment Link in the browser, Flutterwave calls the `flutterwave-webhook` Edge
+-- Function on `charge.completed` (or `subscription.created`), and that function
 -- flag to true. The client only ever READS it.
 --
 -- RLS is tightened to read-only for the signed-in user. The base policy from

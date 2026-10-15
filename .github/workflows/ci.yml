@@ -6,6 +6,10 @@ on:
   pull_request:
     branches: [ main ]
 
+# Distribution is GitHub APK sideload (Flutterwave billing, no store SDK): CI
+# builds a release APK from GitHub Secrets — never from a committed env file
+# (env/*.json is git-ignored; real keys live only in Secrets). See
+# docs/BACKEND_DEPLOY.md §7 for the secret list.
 jobs:
   analyze-test:
     runs-on: ubuntu-latest
@@ -26,6 +30,8 @@ jobs:
         with:
           node-version: '22'
       - run: node supabase/functions/copy-signal/copy_signal_test.ts
+      - run: node supabase/functions/delete-account/delete_account_test.ts
+      - run: node supabase/functions/flutterwave-webhook/flutterwave_webhook_test.ts
 
   android-build:
     runs-on: ubuntu-latest
@@ -42,8 +48,11 @@ jobs:
           channel: stable
           cache: true
       - run: flutter pub get
-      - run: flutter build appbundle --release
+      - run: >
+          flutter build apk --release
+          --dart-define=SUPABASE_URL=${{ secrets.SUPABASE_URL }}
+          --dart-define=SUPABASE_ANON_KEY=${{ secrets.SUPABASE_ANON_KEY }}
       - uses: actions/upload-artifact@v4
         with:
-          name: app-release-aab
-          path: build/app/outputs/bundle/release/app-release.aab
+          name: app-release-apk
+          path: build/app/outputs/flutter-apk/app-release.apk

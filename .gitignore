@@ -4,6 +4,15 @@ com.tradeguard.app
 env/*.json
 !env/dev.example.json
 !env/prod.example.json
+# Local developer overrides — never committed (real keys live here).
+env/*.local.json
+
+# macOS metadata + stray tool output. `._*` files appear when the repo is
+# zipped/unzipped through macOS tooling; `files.txt` / `test_output*.txt` are
+# ad-hoc command dumps, not sources.
+._*
+files.txt
+test_output*.txt
 
 # Flutter/Dart
 .dart_tool/
@@ -38,6 +47,7 @@ ios/Runner.xcodeproj/xcuserdata/
 # Secrets / platform config
 android/key.properties
 key.properties
+# Release signing keystores — live in CI secrets / the release machine only.
 *.jks
 *.keystore
 

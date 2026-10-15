@@ -8,6 +8,9 @@
 //     every other event is ignored;
 //   * email extraction — the customer email is read from the Flutterwave payload
 //     and a payload with no email yields null;
+//   * tier inference (migration 0013) — `data.amount` maps to months
+//     (~$15 → 1, ~$40 → 3, ~$145 → 12, unknown → 1) and the expiry helper
+//     advances whole calendar months;
 //   * masking — `maskEmail` never leaks the full local part or domain.
 //
 // Run with:  node supabase/functions/flutterwave-webhook/flutterwave_webhook_test.ts
@@ -15,9 +18,12 @@
 // works too.)
 
 import {
+  extractChargeAmount,
   extractCustomerEmail,
+  inferTierMonths,
   isChargeSuccess,
   maskEmail,
+  premiumExpiresAt,
   signaturesMatch,
   verifyWebhook,
 } from './shared.ts';
@@ -110,6 +116,38 @@ test('a payload with no customer email yields null', () => {
     null,
   );
   eq(extractCustomerEmail(null), null);
+});
+
+// ---------------------------------------------------------------------------------------------
+// Tier inference + expiry (migration 0013: no more lifetime grants)
+// ---------------------------------------------------------------------------------------------
+
+test('amounts map to their tier months', () => {
+  eq(inferTierMonths(extractChargeAmount({ data: { amount: 14.99 } })), 1);
+  eq(inferTierMonths(extractChargeAmount({ data: { amount: 39.99 } })), 3);
+  eq(inferTierMonths(extractChargeAmount({ data: { amount: 144.99 } })), 12);
+});
+
+test('amount inference tolerates FX rounding and string/minor-unit shapes', () => {
+  eq(inferTierMonths(extractChargeAmount({ data: { amount: 15.2 } })), 1);
+  eq(inferTierMonths(extractChargeAmount({ data: { amount: '39.99' } })), 3);
+  eq(inferTierMonths(extractChargeAmount({ data: { amount: 14499 } })), 12);
+  eq(inferTierMonths(extractChargeAmount({ data: { charged_amount: 1499 } })), 1);
+});
+
+test('unknown or missing amounts fail closed to 1 month, never lifetime', () => {
+  eq(inferTierMonths(extractChargeAmount({ data: { amount: 999 } })), 1);
+  eq(inferTierMonths(extractChargeAmount({ data: {} })), 1);
+  eq(inferTierMonths(extractChargeAmount({})), 1);
+  eq(inferTierMonths(extractChargeAmount(null)), 1);
+  eq(inferTierMonths(null), 1);
+});
+
+test('premiumExpiresAt advances whole calendar months in UTC', () => {
+  const from = new Date('2026-01-15T00:00:00.000Z');
+  eq(premiumExpiresAt(from, 1), '2026-02-15T00:00:00.000Z');
+  eq(premiumExpiresAt(from, 3), '2026-04-15T00:00:00.000Z');
+  eq(premiumExpiresAt(from, 12), '2027-01-15T00:00:00.000Z');
 });
 
 // ---------------------------------------------------------------------------------------------

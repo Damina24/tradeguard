@@ -32,7 +32,8 @@ class RouterRefreshNotifier extends ChangeNotifier {
 /// [authProvider], and because a per-scope router can be disposed with the ProviderScope.
 ///
 /// Hard-paywall model: the app is 100% premium. A signed-in user whose
-/// `profiles.is_premium` is false is routed to `/paywall` and stays there —
+/// `profiles` entitlement (`is_premium` AND a non-expired `premium_expires_at`,
+/// migration 0013) is false is routed to `/paywall` and stays there —
 /// every core route lives inside the shell or behind an explicit paywall
 /// redirect, so there is no bottom bar or swipe path into the app until the
 /// flag flips. Mock/demo builds bypass the gate (there is no `profiles` row
